@@ -1,14 +1,24 @@
 import casadi as ca
 import numpy as np
+from enum import Enum
+
+class ProblemType(Enum):
+    SDF_ONLY = 2, 
+    ACTUATION_ONLY = 3,
+    SQUARE_TIME = 4, 
+    LINEAR_TIME = 5, 
+    FULL = 6
 
 class TrajectoryOptimizer():
     def __init__(self, 
                  initial_path = None, 
                  SDF = None, 
-                 map = None): 
+                 map = None, 
+                 Problem_Type=ProblemType.FULL): 
         self.initial_path = initial_path
         self.SDF = SDF
         self.map = map
+        self.problem_type = Problem_Type
 
         self.origin = map.start 
         self.goal = map.goal
@@ -16,7 +26,6 @@ class TrajectoryOptimizer():
     def optimize(self):
         N = len(self.initial_path)
 
-        print("N: ", N)
         ### Steps to define the SDF interpolation to ensure continuous double derivatives and faster convergence
         sdf_rows, sdf_cols = self.SDF.get_sdf().shape
         x_size = (0, sdf_cols) # X is the column in the map
@@ -84,19 +93,27 @@ class TrajectoryOptimizer():
         for i in range(N): 
             opti.subject_to(opti.bounded(-2, u[:, i], 2)) # Ensure the control inputs are bounded
             opti.subject_to(opti.bounded(0, x[:, i], 200)) # Ensure the trajectory is within the map limits
+            opti.subject_to(SDF(x[::-1, i]) > 2)
 
 
         cost = 0
         
         ## Obstacles Constraint
+        if self.problem_type == ProblemType.LINEAR_TIME :
+            cost += N * t
+        else:
+            cost += N * t ** 2
 
         for i in range(N-1):
-            cost += ca.sumsqr(u[:, i]) * 1000  + 50 * t ** 2 - 20 * ca.log(SDF(x[::-1, i]))
+            if self.problem_type == ProblemType.ACTUATION_ONLY or self.problem_type == ProblemType.FULL:
+                cost += u[:, i].T @ 10 @ u[:, i]
+            if self.problem_type == ProblemType.SDF_ONLY or self.problem_type == ProblemType.FULL:
+                cost -= ca.log(SDF(x[::-1, i]))
 
         opti.minimize(cost)
 
-        p_opts = {"expand": False}
-        s_opts = {"max_iter": 10000}
+        p_opts = {"expand": False, "print_time": 0}
+        s_opts = {"max_iter": 10000, "print_level" : 0}
 
         opti.solver("ipopt", p_opts, s_opts)
 
@@ -106,9 +123,6 @@ class TrajectoryOptimizer():
 
         print("Number of variables:", num_vars)
         print("Number of constraints:", num_constraints)
-
-
-        #opti.set_initial(x, np.array(self.initial_path).T)
 
         try:
             opti.set_initial(x, np.array(self.initial_path).T)

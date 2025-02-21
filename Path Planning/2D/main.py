@@ -8,12 +8,10 @@ from shapely.geometry import Point, Polygon
 import matplotlib.colors as mcolors
 
 
-
-
 from Map import Map
 from sdf2d import SDF
 from rrt import PathPlanning
-from path_optimizer import TrajectoryOptimizer, PathLinearizer
+from path_optimizer import TrajectoryOptimizer, PathLinearizer, ProblemType
 
 
 # Function to generate a random point within bounds
@@ -61,85 +59,68 @@ def run_experiment(experiment_id, base_dir):
 
     map = Map(x_size, y_size, start, goal, obstacles=obstacles)
     sdf = SDF(map)
+    sdf.set_max_sdf_value(20)
     planner = PathPlanning(map)
     final_path, explored_paths = planner.rrt()
 
-    if final_path is not None:
-        optimizer = TrajectoryOptimizer(initial_path=final_path, SDF=sdf, map=map)
-        sol, x, u, t, v = optimizer.optimize()
-        if sol is not None: 
-            linearizer = PathLinearizer(sol, np.load("A_matrix.npy")[:2, :], 5, t)
-            state = np.vstack((x, v))
-            A_k_list, B_k_list = linearizer.linearize_trajectory(state, u)
-            x_lin, u_lin = linearizer.compute_linearized_state_control(state, u)
-
-            print("Linearized trajectory: ", x_lin)
-            print("Non linearized trajectory: ", x)
-
-            print("Linearized control: ", u_lin)
-            print("Non linearized control: ", u)
-
-            v = np.linalg.norm(v, axis=0)
+    problem_type = {
+        "SDF_ONLY" :  ProblemType.SDF_ONLY, 
+        "ACTUALTION_ONLY" : ProblemType.ACTUATION_ONLY,
+        "SQUARE_TIME" : ProblemType.SQUARE_TIME,
+        "LINEAR_TIME" : ProblemType.LINEAR_TIME,
+        "FULL" : ProblemType.FULL
+    }
 
     # Create folder for this experiment
     exp_dir = os.path.join(base_dir, str(experiment_id))
     os.makedirs(exp_dir, exist_ok=True)
 
-    # Save data
-    np.save(os.path.join(exp_dir, "initial_path.npy"), final_path)
-    np.save(os.path.join(exp_dir, "sdf.npy"), sdf.sdf)
-    np.save(os.path.join(exp_dir, "map.npy"), map.map)
 
-    # Save plot instead of showing it
-    fig, ax = plt.subplots(figsize=(16, 6))
-
-    # Define colormap for SDF
-    norm_sdf = TwoSlopeNorm(vmin=0, vcenter=0.01, vmax=sdf.sdf.max())
-    cmap_sdf = plt.cm.bwr_r
-    sdf_plot = ax.imshow(sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf)
-
-    # Plot initial trajectory
     if final_path is not None:
-        x_, y_ = zip(*final_path)
-        ax.plot(x_, y_, label="Initial Trajectory", color="green")
+        counter = 0
+        for pt in problem_type:
+            print(problem_type[pt])
+            counter += 1
+            plt.subplot(2, 3, counter)
 
-        # If optimized path exists, plot it with velocity colors
-        if x_lin is not None and u_lin is not None:
-            ax.plot(x_lin[0], x_lin[1], label="Linearized Trajectory", color="blue")
-            
+            # Plot the SDF
+            norm_sdf = TwoSlopeNorm(vmin=0, vcenter=0.01, vmax=sdf.sdf.max())
+            cmap_sdf = plt.cm.bwr_r
+            sdf_plot = plt.imshow(sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf) 
 
+            # Add first colorbar for SDF
+            cbar_sdf = plt.colorbar(sdf_plot, fraction=0.05, pad=0.04)
+            cbar_sdf.set_label("Distance to Obstacle (m)")
 
-        if x is not None and v is not None:
-            norm_vel = mcolors.Normalize(vmin=min(v), vmax=max(v))
-            cmap_vel = plt.cm.YlGn
-            
-            # Scatter plot for velocity
-            sc = ax.scatter(x[0], x[1], c=v, cmap=cmap_vel, norm=norm_vel, marker="o", s=50, edgecolors="k")
+            # Plot the RRT PATH
+            x_, y_ = zip(*final_path)
+            plt.plot(x_, y_, label="Initial Trajectory", color="green")
+            plt.plot(start[0], start[1], "ro", label="start")
+            plt.plot(goal[0], goal[1], "bo", label="goal")
 
-    # Plot start and goal points
-    ax.plot(start[0], start[1], "ro", label="Start")
-    ax.plot(goal[0], goal[1], "bo", label="Goal")
+            # Optimize and plot the trajectory
+            optimizer = TrajectoryOptimizer(initial_path=final_path, SDF=sdf, map=map, Problem_Type=problem_type[pt])
+            plt.title(f"Optimization Problem Type: {pt} ")
+            plt.xlabel(f"Map Coordinate X - m")
+            plt.ylabel(f"Map Coordinate y - m")
+            sol, x, u, t, v = optimizer.optimize()
+            if sol is not None:
+                v = np.linalg.norm(v, axis=0)
+                plt.title(f"Optimization Problem Type: {pt} - Delta Time - {round(t, 3)}")
+                norm_vel = mcolors.Normalize(vmin=min(v), vmax=max(v))
+                cmap_vel = plt.cm.YlGn
+                if np.any(np.isinf(x[0])) or np.any(np.isnan(x[0])):
+                    print("Inf or Nan")
+                if np.any(np.isinf(x[1])) or np.any(np.isnan(x[1])):
+                    print("Inf or Nan")
 
-    # Add first colorbar for SDF
-    cbar_sdf = fig.colorbar(sdf_plot, ax=ax, fraction=0.05, pad=0.04)
-    cbar_sdf.set_label("Distance to Obstacle (m)")
+                plt.scatter(x[0], x[1], c=v, cmap=cmap_vel, norm=norm_vel, marker="o", s=50)
 
-    # Add second colorbar for velocity if available
-    if x is not None and v is not None:
-        cbar_vel = fig.colorbar(sc, ax=ax, fraction=0.05, pad=0.12)
-        cbar_vel.set_label("Velocity (m/s)")
-
-    # Final plot settings
-    ax.set_title(f"Experiment {experiment_id}: Path Optimization")
-    ax.set_xlabel("Map Coordinate X - m")
-    ax.set_ylabel("Map Coordinate Y - m")
-    ax.legend()
-
-    # Save plot
-    plt_name = f"trajectory_plot_{experiment_id}.png"
+            plt.legend()
+    plt_name = f"tp_{experiment_id}.png"
     plt.savefig(os.path.join(exp_dir, plt_name))
     plt.show()
-    plt.close()
+
 
 
 
