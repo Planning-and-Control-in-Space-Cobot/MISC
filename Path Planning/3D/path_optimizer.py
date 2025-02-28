@@ -2,6 +2,9 @@ import casadi as ca
 import spatial_casadi as sc
 import numpy as np 
 
+import pyvista as pv
+import pymesh 
+
 class TrajectoryOptimizer():
     def __init__(self, sdf, map):
         self.sdf = sdf
@@ -75,14 +78,20 @@ class TrajectoryOptimizer():
                     m_, 
                     actuation_cost = 1000,
                     time_cost = 50, 
-                    sdf_cost = 20):
+                    sdf_cost = 20, 
+                    initial_path = None):
 
         if not self.check_mechanical_parameters(m_, J_, A_):
             raise ValueError("Invalid mechanical parameters")
 
         self.opti = ca.Opti()
 
-        self.N = N
+        if initial_path is not None:
+            self.N = len(initial_path)
+            self.initial_path = initial_path
+        else:
+            self.N = N
+        
 
         self.w = self.opti.variable(3, self.N) # Ang vel in rad/s
         self.v = self.opti.variable(3, self.N) # Lin vel in m/s
@@ -150,7 +159,7 @@ class TrajectoryOptimizer():
             self.opti.subject_to(self.opti.bounded(-2, self.u[:, i], 2))
 
             ## Later this should be uncommented
-            #self.opti.subject_to(self.sdf(self.p[:, i]) > 0)
+            self.opti.subject_to(self.sdf(self.p[:, i]) > 0)
 
             self.opti.subject_to(ca.norm_2(self.q[:, i]) == 1)
 
@@ -160,13 +169,17 @@ class TrajectoryOptimizer():
         for i in range(N):
             cost += self.u[:, i].T @ self.u[:, i] * actuation_cost
             cost += self.dt * time_cost * self.dt 
+            cost += 1/(self.sdf(self.p[:, i]) + 1e-3) * sdf_cost
 
         self.opti.minimize(cost)
-
-        p_opts = {"expand": False}
+        p_opts = {
+            "expand": False, 
+            "jit" : True, 
+            "jit_cleanup" : True, 
+        }
         s_opts = {
-            "max_cpu_time": 10, 
-            "max_iter": 1000
+            "max_cpu_time": 40, 
+            "max_iter": 10000, 
         }
         self.opti.solver("ipopt", p_opts, s_opts)
 
@@ -191,15 +204,42 @@ class TrajectoryOptimizer():
         self.opti.set_value(self.goal_ang_vel, goal_ang_vel)
 
         self.opti.set_initial(self.dt, 0.1)
+
+        if hasattr(self, "initial_path"):
+            path_array = np.array(self.initial_path)
+            self.opti.set_initial(self.p, path_array.T)
+            #self.opti.set_initial(self.v, np.gradient(path_array, axis=1))
         
         for i in range(self.N):
             self.opti.set_initial(self.q[:, i], start_quat)
 
+
         try:
-            sol = self.opti.solve()
-            return sol
+            self.sol = self.opti.solve()
+            return self.sol
         except:
             return None
+
+    def plot_trajectory(self, map):
+        if not hasattr(self, "opti"):
+            raise ValueError("Optimization Problem not setup")
+
+        if not hasattr(self, "sol"):
+            raise ValueError("Optimization Problem not solved")
+
+        plotter = map.plot()
+
+        p = self.sol.value(self.p)
+        
+        trajectory_poly = pv.PolyData(p.T)
+        plotter.add_mesh(trajectory_poly, color="green", line_width=4)
+        return plotter
+    
+
+        
+
+        
+
 
 
 
