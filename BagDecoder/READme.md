@@ -58,7 +58,7 @@ print(messages)
 - If the specified read interval is invalid, the script will read the full bag without filtering by time.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
 ## Author
 André Rebelo Teixeira

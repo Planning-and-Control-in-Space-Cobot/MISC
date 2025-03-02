@@ -1,3 +1,27 @@
+"""
+MIT License
+
+Copyright (c) 2025 André Rebelo Teixeira
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 import os
 import sys
 import random
@@ -54,7 +78,10 @@ def run_experiment(experiment_id, base_dir):
 
     while True:
         goal = random_point()
-        if not any(obs.contains(Point(goal)) for obs in obstacles) and goal != start:
+        if (
+            not any(obs.contains(Point(goal)) for obs in obstacles)
+            and goal != start
+        ):
             break
 
     map = Map(x_size, y_size, start, goal, obstacles=obstacles)
@@ -64,17 +91,16 @@ def run_experiment(experiment_id, base_dir):
     final_path, explored_paths = planner.rrt()
 
     problem_type = {
-        "SDF_ONLY" :  ProblemType.SDF_ONLY, 
-        "ACTUALTION_ONLY" : ProblemType.ACTUATION_ONLY,
-        "SQUARE_TIME" : ProblemType.SQUARE_TIME,
-        "LINEAR_TIME" : ProblemType.LINEAR_TIME,
-        "FULL" : ProblemType.FULL
+        "SDF_ONLY": ProblemType.SDF_ONLY,
+        "ACTUALTION_ONLY": ProblemType.ACTUATION_ONLY,
+        "SQUARE_TIME": ProblemType.SQUARE_TIME,
+        "LINEAR_TIME": ProblemType.LINEAR_TIME,
+        "FULL": ProblemType.FULL,
     }
 
     # Create folder for this experiment
     exp_dir = os.path.join(base_dir, str(experiment_id))
     os.makedirs(exp_dir, exist_ok=True)
-
 
     if final_path is not None:
         counter = 0
@@ -86,7 +112,9 @@ def run_experiment(experiment_id, base_dir):
             # Plot the SDF
             norm_sdf = TwoSlopeNorm(vmin=0, vcenter=0.01, vmax=sdf.sdf.max())
             cmap_sdf = plt.cm.bwr_r
-            sdf_plot = plt.imshow(sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf) 
+            sdf_plot = plt.imshow(
+                sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf
+            )
 
             # Add first colorbar for SDF
             cbar_sdf = plt.colorbar(sdf_plot, fraction=0.05, pad=0.04)
@@ -99,14 +127,21 @@ def run_experiment(experiment_id, base_dir):
             plt.plot(goal[0], goal[1], "bo", label="goal")
 
             # Optimize and plot the trajectory
-            optimizer = TrajectoryOptimizer(initial_path=final_path, SDF=sdf, map=map, Problem_Type=problem_type[pt])
+            optimizer = TrajectoryOptimizer(
+                initial_path=final_path,
+                SDF=sdf,
+                map=map,
+                Problem_Type=problem_type[pt],
+            )
             plt.title(f"Optimization Problem Type: {pt} ")
             plt.xlabel(f"Map Coordinate X - m")
             plt.ylabel(f"Map Coordinate y - m")
             sol, x, u, t, v = optimizer.optimize()
             if sol is not None:
                 v = np.linalg.norm(v, axis=0)
-                plt.title(f"Optimization Problem Type: {pt} - Delta Time - {round(t, 3)}")
+                plt.title(
+                    f"Optimization Problem Type: {pt} - Delta Time - {round(t, 3)}"
+                )
                 norm_vel = mcolors.Normalize(vmin=min(v), vmax=max(v))
                 cmap_vel = plt.cm.YlGn
                 if np.any(np.isinf(x[0])) or np.any(np.isnan(x[0])):
@@ -114,14 +149,20 @@ def run_experiment(experiment_id, base_dir):
                 if np.any(np.isinf(x[1])) or np.any(np.isnan(x[1])):
                     print("Inf or Nan")
 
-                plt.scatter(x[0], x[1], c=v, cmap=cmap_vel, norm=norm_vel, marker="o", s=50)
+                plt.scatter(
+                    x[0],
+                    x[1],
+                    c=v,
+                    cmap=cmap_vel,
+                    norm=norm_vel,
+                    marker="o",
+                    s=50,
+                )
 
             plt.legend()
     plt_name = f"tp_{experiment_id}.png"
     plt.savefig(os.path.join(exp_dir, plt_name))
     plt.show()
-
-
 
 
 def main():
@@ -137,8 +178,10 @@ def main():
             print(f"Running experiment {i}...")
             run_experiment(i, base_dir)
 
-        print("All experiments completed. Check the 'plots' directory for results.")
-    
+        print(
+            "All experiments completed. Check the 'plots' directory for results."
+        )
+
     else:
         print("Running in normal mode.")
         run_experiment("single_run", "plots")

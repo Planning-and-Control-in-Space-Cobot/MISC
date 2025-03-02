@@ -2,25 +2,29 @@ import casadi as ca
 import numpy as np
 from enum import Enum
 
+
 class ProblemType(Enum):
-    SDF_ONLY = 2, 
-    ACTUATION_ONLY = 3,
-    SQUARE_TIME = 4, 
-    LINEAR_TIME = 5, 
+    SDF_ONLY = (2,)
+    ACTUATION_ONLY = (3,)
+    SQUARE_TIME = (4,)
+    LINEAR_TIME = (5,)
     FULL = 6
 
-class TrajectoryOptimizer():
-    def __init__(self, 
-                 initial_path = None, 
-                 SDF = None, 
-                 map = None, 
-                 Problem_Type=ProblemType.FULL): 
+
+class TrajectoryOptimizer:
+    def __init__(
+        self,
+        initial_path=None,
+        SDF=None,
+        map=None,
+        Problem_Type=ProblemType.FULL,
+    ):
         self.initial_path = initial_path
         self.SDF = SDF
         self.map = map
         self.problem_type = Problem_Type
 
-        self.origin = map.start 
+        self.origin = map.start
         self.goal = map.goal
 
     def optimize(self):
@@ -28,28 +32,24 @@ class TrajectoryOptimizer():
 
         ### Steps to define the SDF interpolation to ensure continuous double derivatives and faster convergence
         sdf_rows, sdf_cols = self.SDF.get_sdf().shape
-        x_size = (0, sdf_cols) # X is the column in the map
-        y_size = (0, sdf_rows) # Y is the row in the map
+        x_size = (0, sdf_cols)  # X is the column in the map
+        y_size = (0, sdf_rows)  # Y is the row in the map
 
         ## Knots for the interpolation
         d_knots = [
             np.linspace(*x_size, sdf_cols),
-            np.linspace(*y_size, sdf_rows)
-        ] 
+            np.linspace(*y_size, sdf_rows),
+        ]
 
         ## Flatten SDF matrix for the interpolation
         d_flat = self.SDF.get_sdf().ravel(order="F")
 
         SDF = ca.interpolant(
-            "SDF",
-            "bspline", 
-            d_knots, 
-            d_flat, 
-            {"algorithm": "smooth_linear"}
+            "SDF", "bspline", d_knots, d_flat, {"algorithm": "smooth_linear"}
         )
 
         ## Declare value of the opti class
-        opti = ca.Opti() 
+        opti = ca.Opti()
 
         ### Optimization variables
         ## This represents the positon of the robot in the world frame
@@ -67,53 +67,66 @@ class TrajectoryOptimizer():
         ## Initial for value for time is 1s and the minimum time between each point must be greater than 0, since otherwise we have a negative time
         opti.set_initial(t, 1)
         opti.subject_to(t > 0)
-    
+
         ### Optimization parameters such as the mass of the robot and the matrix A
         ## Actuation matrix
         A = opti.parameter(2, 6)
         opti.set_value(A, np.load("A_matrix.npy")[:2, :])
 
-        ## Mass of the robot 
-        m = opti.parameter(1) # mass in kg
+        ## Mass of the robot
+        m = opti.parameter(1)  # mass in kg
         opti.set_value(m, 5)
 
         # Minimum distance to the obstacles
         d_min = 1
 
-        opti.subject_to(x[:, 0] == self.origin) # Ensure the trajectory starts at the origin
-        opti.subject_to(x[:, -1] == self.goal) # Ensure the trajectory ends at the goal
-        opti.subject_to(v[:, 0] == 0) # Ensure the initial velocity is zero
-        opti.subject_to(v[:, -1] == 0) # Ensure the final velocity is zero
+        opti.subject_to(
+            x[:, 0] == self.origin
+        )  # Ensure the trajectory starts at the origin
+        opti.subject_to(
+            x[:, -1] == self.goal
+        )  # Ensure the trajectory ends at the goal
+        opti.subject_to(v[:, 0] == 0)  # Ensure the initial velocity is zero
+        opti.subject_to(v[:, -1] == 0)  # Ensure the final velocity is zero
 
         # Dynamical constraintS
         for i in range(N - 1):
-            opti.subject_to(v[:, i+1] == v[:, i] + t * (A @ u[:, i]) / m)
-            opti.subject_to(x[:, i+1] == x[:, i] + t * v[:, i])
+            opti.subject_to(v[:, i + 1] == v[:, i] + t * (A @ u[:, i]) / m)
+            opti.subject_to(x[:, i + 1] == x[:, i] + t * v[:, i])
 
-        for i in range(N): 
-            opti.subject_to(opti.bounded(-2, u[:, i], 2)) # Ensure the control inputs are bounded
-            opti.subject_to(opti.bounded(0, x[:, i], 200)) # Ensure the trajectory is within the map limits
+        for i in range(N):
+            opti.subject_to(
+                opti.bounded(-2, u[:, i], 2)
+            )  # Ensure the control inputs are bounded
+            opti.subject_to(
+                opti.bounded(0, x[:, i], 200)
+            )  # Ensure the trajectory is within the map limits
             opti.subject_to(SDF(x[::-1, i]) > 2)
 
-
         cost = 0
-        
+
         ## Obstacles Constraint
-        if self.problem_type == ProblemType.LINEAR_TIME :
+        if self.problem_type == ProblemType.LINEAR_TIME:
             cost += N * t
         else:
-            cost += N * t ** 2
+            cost += N * t**2
 
-        for i in range(N-1):
-            if self.problem_type == ProblemType.ACTUATION_ONLY or self.problem_type == ProblemType.FULL:
+        for i in range(N - 1):
+            if (
+                self.problem_type == ProblemType.ACTUATION_ONLY
+                or self.problem_type == ProblemType.FULL
+            ):
                 cost += u[:, i].T @ 10 @ u[:, i]
-            if self.problem_type == ProblemType.SDF_ONLY or self.problem_type == ProblemType.FULL:
+            if (
+                self.problem_type == ProblemType.SDF_ONLY
+                or self.problem_type == ProblemType.FULL
+            ):
                 cost -= ca.log(SDF(x[::-1, i]))
 
         opti.minimize(cost)
 
         p_opts = {"expand": False, "print_time": 0}
-        s_opts = {"max_iter": 10000, "print_level" : 0}
+        s_opts = {"max_iter": 10000, "print_level": 0}
 
         opti.solver("ipopt", p_opts, s_opts)
 
@@ -128,8 +141,8 @@ class TrajectoryOptimizer():
             opti.set_initial(x, np.array(self.initial_path).T)
 
             sol = opti.solve()
-            #print("t: ", sol.value(t))
-            #print("x: ", sol.value(x))
+            # print("t: ", sol.value(t))
+            # print("x: ", sol.value(x))
             ##print("v: ", sol.value(v))
             return sol, sol.value(x), sol.value(u), sol.value(t), sol.value(v)
         except:
@@ -142,7 +155,7 @@ class TrajectoryOptimizer():
             return None, None, None, None, None
 
 
-class PathLinearizer(): 
+class PathLinearizer:
     def __init__(self, sol, A, m, dt):
         self.sol = sol  # CasADi solution
         self.A = A  # Actuation matrix
@@ -176,7 +189,7 @@ class PathLinearizer():
 
         return A_k, B_k
 
-    def linearize_trajectory(self, x_traj, u_traj): 
+    def linearize_trajectory(self, x_traj, u_traj):
         N = x_traj.shape[1]
         A_list, B_list = [], []
 
@@ -207,6 +220,6 @@ class PathLinearizer():
         # Propagate linearized state forward
         for k in range(N - 1):
             u_lin[:, k] = u_traj[:, k]  # Keep initial control the same
-            x_lin[:, k+1] = A_list[k] @ x_lin[:, k] + B_list[k] @ u_lin[:, k]
+            x_lin[:, k + 1] = A_list[k] @ x_lin[:, k] + B_list[k] @ u_lin[:, k]
 
         return x_lin, u_lin
