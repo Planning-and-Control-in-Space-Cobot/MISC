@@ -35,7 +35,9 @@ class RowData:
             self.thrust = data.ThrustN
             self.torque = data.TorqueNm
             self.efficiency = data.PropellerMechEfficiencyNW
-            self.rpm = data.MotorElectricalSpeedRPM * (1 if self.pwm > 1500 else -1)
+            self.rpm = data.MotorElectricalSpeedRPM * (
+                1 if self.pwm > 1500 else -1
+            )
 
         else:
             self.pwm = 0
@@ -147,6 +149,7 @@ pwm = [row.pwm for row in data]
 thrust = [row.thrust for row in data]
 torque = [row.torque for row in data]
 rads = [row.rpm * 2 * np.pi / 60 for row in data]
+
 
 # Function to fit polynomial, plot, and export equation
 def plot_with_fit(
