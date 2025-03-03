@@ -3,6 +3,7 @@ import scipy.spatial.transform as trf
 from abc import ABC, abstractmethod
 from scipy.integrate import solve_ivp
 
+
 class Model(ABC):
     @abstractmethod
     def __init__(self):
@@ -12,11 +13,12 @@ class Model(ABC):
     def f(self, t, state, u):
         pass
 
+
 class Model3D(Model):
     def __init__(self, mass=1, inertia=np.eye(3)):
         """
         Initialize the 3D motion model.
-        
+
         Parameters:
             mass (float): Mass of the rigid body.
             inertia (np.array): 3x3 inertia matrix.
@@ -30,25 +32,31 @@ class Model3D(Model):
     def q_matrix(q):
         """
         Compute the quaternion kinematic matrix.
-        
+
         Parameters:
             q (np.array): Quaternion [x, y, z, w] (SciPy convention).
-        
+
         Returns:
             np.array: 4x3 matrix for quaternion kinematics.
         """
         x, y, z, w = q
-        return 0.5 * np.array([
-            [w, -z, y], 
-            [z, w, -x], 
-            [-y, x, w], 
-            [-x, -y, -z,] 
-        ])
+        return 0.5 * np.array(
+            [
+                [w, -z, y],
+                [z, w, -x],
+                [-y, x, w],
+                [
+                    -x,
+                    -y,
+                    -z,
+                ],
+            ]
+        )
 
     def f(self, t, state, u):
         """
         Compute the time derivative of the state given the current state and input.
-        
+
         Parameters:
             t (float): Time (required for ODE solvers but unused).
             state (np.array): Flat 13D state vector: [px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz].
@@ -58,14 +66,14 @@ class Model3D(Model):
             np.array: Flat 13D derivative vector.
         """
         # Unpack state
-        p = state[0:3]       # Position
-        v = state[3:6]       # Velocity
-        q = state[6:10]      # Quaternion (x, y, z, w)
-        w = state[10:13]     # Angular velocity
+        p = state[0:3]  # Position
+        v = state[3:6]  # Velocity
+        q = state[6:10]  # Quaternion (x, y, z, w)
+        w = state[10:13]  # Angular velocity
 
         # Unpack control
-        F = u[0:3]           # Force
-        M = u[3:6]           # Torque
+        F = u[0:3]  # Force
+        M = u[3:6]  # Torque
 
         # Convert quaternion to rotation matrix
         R = trf.Rotation.from_quat(q).as_matrix()
@@ -79,10 +87,12 @@ class Model3D(Model):
         # Flatten and return
         return np.concatenate([p_dot, v_dot, q_dot, w_dot])
 
+
 class Simulator:
     """
     A simulator that integrates the Model3D dynamics over time.
     """
+
     def __init__(self, model, initial_state, dt=0.001):
         """
         Initialize the simulator.
@@ -112,9 +122,9 @@ class Simulator:
             t_span=t_span,
             y0=self.state,
             method="RK45",
-            t_eval=[self.dt]
+            t_eval=[self.dt],
         )
-        
+
         # Store new state
         self.state = sol.y[:, -1]
 
@@ -122,6 +132,7 @@ class Simulator:
         self.state[6:10] /= np.linalg.norm(self.state[6:10])
 
         return self.state
+
 
 # ---------------- Example usage ----------------
 if __name__ == "__main__":
@@ -133,10 +144,23 @@ if __name__ == "__main__":
     model = Model3D(mass, inertia)
 
     # Define initial state: [position, velocity, quaternion, angular velocity]
-    initial_state = np.array([0, 0, 0,  # Position
-                              0, 0, 0,  # Velocity
-                              0, 0, 0, 1,  # Quaternion (Identity)
-                              0, 0, 0])  # Angular velocity
+    initial_state = np.array(
+        [
+            0,
+            0,
+            0,  # Position
+            0,
+            0,
+            0,  # Velocity
+            0,
+            0,
+            0,
+            1,  # Quaternion (Identity)
+            0,
+            0,
+            0,
+        ]
+    )  # Angular velocity
 
     # Create simulator
     simulator = Simulator(model, initial_state, dt=0.001)
