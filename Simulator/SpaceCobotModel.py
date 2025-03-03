@@ -3,7 +3,7 @@ import scipy.spatial.transform as trf
 
 from AbstractModel import Model
 
-class Model3D(Model):
+class SpaceCobot(Model):
     def __init__(self, mass=1, inertia=np.eye(3), A=np.ones((6, 6))):
         """Initialize the 3D motion model.
 
