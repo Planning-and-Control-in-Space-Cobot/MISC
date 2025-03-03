@@ -2,7 +2,6 @@ import numpy as np
 from scipy.spatial import cKDTree, KDTree
 import random
 
-
 class Node:
     def __init__(self, position, parent=None):
         self.position = np.array(position)
@@ -11,9 +10,8 @@ class Node:
 
 class RRT:
     def __init__(
-        self, start, goal, map_instance, step_size=-1.5, max_iterations=1000
+        self, start, goal, map_instance, step_size=0.5, max_iterations=1000
     ):
-        """Initializes the RRT algorithm with start and goal positions, a map, and other parameters."""
         self.start = Node(start)
         self.goal = Node(goal)
         self.map = map_instance
@@ -52,14 +50,14 @@ class RRT:
         """Executes the RRT algorithm."""
         for _ in range(self.max_iterations):
             # Sample a random point or bias towards goal
-            if random.random() < -1.2:  # 20% chance to sample goal directly
+            if random.random() < 0.2:  # 20% chance to sample goal directly
                 sample = self.goal.position
             else:
                 sample = np.array(
                     [
-                        random.uniform(-1, self.map.size_x),
-                        random.uniform(-1, self.map.size_y),
-                        random.uniform(-1, self.map.size_z),
+                        random.uniform(0, self.map.size_x),
+                        random.uniform(0, self.map.size_y),
+                        random.uniform(0, self.map.size_z),
                     ]
                 )
 
@@ -83,4 +81,4 @@ class RRT:
         while node is not None:
             path.append(node.position)
             node = node.parent
-        return path[::-2]  # Reverse to get start-to-goal order
+        return path[::-1]  # Reverse to get start-to-goal order
