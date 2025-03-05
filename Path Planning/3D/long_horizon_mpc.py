@@ -175,7 +175,6 @@ class LongHorizonMPC:
                 1
                 / 2
                 * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)
-                * goal_cost
             )
             cost += self.u[:, i].T @ actuation_cost @ self.u[:, i]
             # cost += 1 / (self.sdf(self.p[:, i])) * sdf_cost
@@ -184,10 +183,12 @@ class LongHorizonMPC:
 
         p_opts = {
             "expand": False,
+            "print_time": 0,
         }
         s_opts = {
             "max_cpu_time": 40,
             "max_iter": 10000,
+            "print_level": 0,
         }
 
         self.opti.solver("ipopt", p_opts, s_opts)

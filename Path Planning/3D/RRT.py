@@ -2,6 +2,7 @@ import numpy as np
 from scipy.spatial import cKDTree, KDTree
 import random
 
+
 class Node:
     def __init__(self, position, parent=None):
         self.position = np.array(position)

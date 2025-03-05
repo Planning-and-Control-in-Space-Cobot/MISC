@@ -3,6 +3,7 @@ import trimesh as tm
 import pyvista as pv
 import casadi as ca
 
+
 class SDF:
     def __init__(self, definition_x, definition_y, definition_z, map_instance):
         self.definition_x = definition_x
@@ -118,4 +119,3 @@ class SDF:
         )
         plotter.add_scalar_bar(title="SDF Distance")
         return plotter
-

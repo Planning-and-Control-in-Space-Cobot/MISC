@@ -1,6 +1,7 @@
-import  pyvista as pv
+import pyvista as pv
 import numpy as np
 import trimesh as tm
+
 
 class Map:
     def __init__(self, size_x, size_y, size_z, obstacles):
