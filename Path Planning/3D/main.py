@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib 
 
-
-
 from long_horizon_mpc import LongHorizonMPC
 from Map import Map
 from SDF import SDF
@@ -22,6 +20,7 @@ from Simulator import Simulator
 from SpaceCobotModel import SpaceCobot 
 
 def main():
+    np.set_printoptions(linewidth=200, suppress=True, precision=6)
     scene = tm.load("space_cobot.stl")
     # Extract the first mesh from the scene
     space_cobot_mesh = scene.geometry.values()[0] if isinstance(scene, tm.Scene) else scene
@@ -39,14 +38,16 @@ def main():
     # Define obstacles (box and sphere)
     box = tm.creation.box(
         extents=[2, 2, 2],
-        transform=tm.transformations.translation_matrix([3, 3, 3]),
+        transform=tm.transformations.translation_matrix([7, 2, 7]),
     )
+
     sphere = tm.creation.icosphere(radius=1.5, subdivisions=3)
-    sphere.apply_translation([7, 7, 7])
+    sphere.apply_translation([17, 17, 17])
     obstacles = [(box, "red"), (sphere, "blue")]
+    obstacles = []
 
     # Create the map instance
-    map_instance = Map(size_x=10, size_y=10, size_z=10, obstacles=obstacles)
+    map_instance = Map(size_x=5, size_y=5, size_z=5, obstacles=obstacles)
 
     # Instantiate the RRT planner
     rrt_planner = RRT(
@@ -57,9 +58,10 @@ def main():
 
     # Create the SDF class
     sdf = SDF(
-        definition_x=10,
-        definition_y=10,
-        definition_z=10,
+        definition_x=5,
+        definition_y=5,
+        definition_z=5,
+        max_value=10,
         map_instance=map_instance,
     )
     sdf.compute_sdf()
@@ -76,22 +78,17 @@ def main():
 
     sdf_interpolant = sdf.interpolation()
 
-    print(
-        "Box distance (3, 3, 3)",
-        -tm.proximity.signed_distance(box, [[3, 3, 3]]),
-    )
-
     ## Define initial state for both the simulator and the Long Horizon MPC
-    initial_position = [1, 1, 1] # meters (x, y, z)
+    initial_position = [0, 0, 0] # meters (x, y, z)
     initial_velocity = [0, 0, 0] # m/s (x, y, z)
-    initial_quaternion = trf.Rotation.from_euler("xyz", [0, 0, 0], degrees=True).as_quat() # Scalar last : x, y, z, w  
+    initial_quaternion = trf.Rotation.from_euler("xyz", [90, 0, 0], degrees=True).as_quat() # Scalar last : x, y, z, w  
     initial_angular_velocity = [0, 0, 0] # rad/s  (x, y, z) 
 
     initial_state = np.concatenate(
         [initial_position, initial_velocity, initial_quaternion, initial_angular_velocity]
     ) 
 
-    final_pos = [9, 9, 9] # meters (x, y, z)
+    final_pos = [4, 4, 4] # meters (x, y, z)
     final_vel = [0, 0, 0] # m/s (x, y, z)
     final_quat = trf.Rotation.from_euler("xyz", [0, 0, 0], degrees=True).as_quat() # Scalar last : x, y, z, w
     final_ang_vel = [0, 0, 0] # rad/s  (x, y, z)
@@ -104,11 +101,10 @@ def main():
     A = np.load("A_matrix.npy")
     J = np.load("J_matrix.npy")
 
-
     LHMPC = LongHorizonMPC(sdf_interpolant, map_instance)
     LHMPC.setup_problem(
-        N=40,
-        dt=0.5,
+        N=20,
+        dt=0.1,
         A_ = A,
         J_ = J, 
         m_ = m,
@@ -124,8 +120,12 @@ def main():
     ang_vel = np.array(initial_angular_velocity)
 
     state = [initial_state]
+    warm_start_pos = None
+    warm_start_vel = None
+    warm_start_quat = None
+    warm_start_ang_vel = None
 
-    while np.linalg.norm(pos - final_pos) > 1.0:
+    while np.linalg.norm(pos - final_pos) > 0.5 or np.linalg.norm(vel) > 0.1:
         sol = LHMPC.solve_problem(
                     pos, 
                     vel, 
@@ -134,24 +134,30 @@ def main():
                     final_pos, 
                     final_vel, 
                     final_quat, 
-                    final_ang_vel
+                    final_ang_vel, 
+                    warm_start_pos,
+                    warm_start_vel,
+                    warm_start_quat,
+                    warm_start_ang_vel
                     )
 
         if sol is None:
             print("No solution found")
             break
+    
+        warm_start_pos = sol.value(LHMPC.p)
+        warm_start_vel = sol.value(LHMPC.v)
+        warm_start_quat = sol.value(LHMPC.q)
+        warm_start_ang_vel = sol.value(LHMPC.w)
 
         u = sol.value(LHMPC.u[:, 0])
-        states = sim.simulate(initial_state, u, 0.5)
+        states = sim.simulate(initial_state, u, 0.1)
         state.append(np.array(states[:, -1]))
         pos = states[0:3, -1]
         vel = states[3:6, -1]
         quat = states[6:10, -1]
         ang_vel = states[10:13, -1]
         print(f"pos: {pos}, desired: {final_pos}")
-
-        #print (f"rot cost : {np.linalg.trace(np.eye(3) - trf.Rotation.from_quat(quat).as_matrix() @ trf.Rotation.from_quat(final_quat).as_matrix().T)}")
-
 
         initial_state = np.hstack((pos, vel, quat, ang_vel))
 
@@ -179,10 +185,10 @@ def main():
     plotter.show()
 
     att = trf.Rotation.from_quat(quat_states.T).as_euler("xyz", degrees=True)
-    times = np.linspace(1, att.shape[0],att.shape[0]) * 0.5
+    times = np.linspace(1, att.shape[0],att.shape[0]) * 0.1
     plt.plot(times, att[:, 0], label="Roll", color="Blue")
-    plt.plot(times, att[:, 1], label="Pitch", color="Blue")
-    plt.plot(times, att[:, 2], label="Yaw", color="Blue")
+    plt.plot(times, att[:, 1], label="Pitch", color="Red")
+    plt.plot(times, att[:, 2], label="Yaw", color="Green")
     plt.legend()
     plt.xlabel("Time - s")
     plt.ylabel("Angle - Degrees")

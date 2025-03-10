@@ -5,10 +5,11 @@ import casadi as ca
 
 
 class SDF:
-    def __init__(self, definition_x, definition_y, definition_z, map_instance):
+    def __init__(self, definition_x, definition_y, definition_z, max_value, map_instance):
         self.definition_x = definition_x
         self.definition_y = definition_y
         self.definition_z = definition_z
+        self.max_value = max_value
         self.map = map_instance
         self.sdf_grid = None
         self.sdf_values = None
@@ -49,6 +50,7 @@ class SDF:
             )
 
             self.sdf_values = np.minimum(self.sdf_values, sdf_temp)
+        self.sdf_value = np.minimum(self.sdf_values, self.max_value)
 
     def get_sdf(self):
         """Returns the SDF as a numpy array with integer-indexed positions."""

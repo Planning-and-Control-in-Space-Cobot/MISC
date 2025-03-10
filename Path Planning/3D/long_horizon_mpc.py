@@ -1,7 +1,7 @@
 import casadi as ca
 import spatial_casadi as sc
 import numpy as np
-
+import time
 
 class LongHorizonMPC:
     def __init__(self, sdf, map):
@@ -40,7 +40,6 @@ class LongHorizonMPC:
         """
 
         q1x, q1y, q1z, q1w = q1[0], q1[1], q1[2], q1[3]
-        q2x, q2y, q2z, q2w = q2[0], q2[1], q2[2], q2[3]
 
         q_ = ca.vertcat(
             ca.horzcat(q1w, q1z, -q1y, q1x),
@@ -49,7 +48,7 @@ class LongHorizonMPC:
             ca.horzcat(-q1x, -q1y, -q1z, q1w),
         )
 
-        return ca.vertcat(q2x, q2y, q2z, q2w)
+        return ca.mtimes(q_, q2)
 
     def quaternion_integration(self, q, w, dt):
         """
@@ -106,6 +105,8 @@ class LongHorizonMPC:
         self.A = self.opti.parameter(6, 6)  # Mixer Matrix
         self.m = self.opti.parameter(1)  # Mass
 
+        self.cost_vector = self.opti.variable(3, N)
+
         self.opti.set_value(self.J, J_)
         self.opti.set_value(self.A, A_)
         self.opti.set_value(self.m, m_)
@@ -157,8 +158,8 @@ class LongHorizonMPC:
 
         for i in range(N):
             self.opti.subject_to(self.opti.bounded(-2, self.u[:, i], 2))
-            self.opti.subject_to(self.sdf(self.p[:, i]) > 0)
-            self.opti.subject_to(ca.norm_2(self.q[:, i]) == 1)
+            #self.opti.subject_to(self.sdf(self.p[:, i]) > 1)
+            #self.opti.subject_to(ca.norm_2(self.q[:, i]) == 1)
 
         cost = 0
 
@@ -171,19 +172,29 @@ class LongHorizonMPC:
                 @ goal_cost
                 @ (self.p[:, i] - self.p_n)
             )
-            cost += (
+
+            self.opti.subject_to(self.cost_vector[0, i] == (self.p[:, i] - self.p_n).T @ goal_cost @ (self.p[:, i] - self.p_n))
+            cost += 10*(
                 1
                 / 2
                 * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)
             )
+            self.opti.subject_to(self.cost_vector[1, i] == 500 * ca.trace(ca.MX.eye(3) - R_des.as_matrix().T @ R.as_matrix()))
+
             cost += self.u[:, i].T @ actuation_cost @ self.u[:, i]
-            # cost += 1 / (self.sdf(self.p[:, i])) * sdf_cost
+            self.opti.subject_to(self.cost_vector[2, i] == self.u[:, i].T @ actuation_cost @ self.u[:, i])
+            #cost += 1 / (self.sdf(self.p[:, i])) * sdf_cost
+        
+        cost += self.v[:, -1].T @ 200 * goal_cost @ self.v[:, -1]
+        cost += self.w[:, -1].T @ 200 * goal_cost @ self.w[:, -1]
+
 
         self.opti.minimize(cost)
 
         p_opts = {
             "expand": False,
             "print_time": 0,
+
         }
         s_opts = {
             "max_cpu_time": 40,
@@ -203,6 +214,10 @@ class LongHorizonMPC:
         goal_vel,
         goal_quat,
         goal_ang_vel,
+        warm_start_pos = None, 
+        warm_start_vel = None, 
+        warm_start_quat = None,
+        warm_start_ang_vel = None
     ):
         self.opti.set_value(self.p0, start_pos)
         self.opti.set_value(self.v0, start_vel)
@@ -214,14 +229,33 @@ class LongHorizonMPC:
         self.opti.set_value(self.q_n, goal_quat)
         self.opti.set_value(self.w_n, goal_ang_vel)
 
-        for i in range(self.N):
-            self.opti.set_initial(self.p[:, i], start_pos)
-            self.opti.set_initial(self.v[:, i], start_vel)
-            self.opti.set_initial(self.q[:, i], start_quat)
-            self.opti.set_initial(self.w[:, i], start_ang_vel)
+        if warm_start_pos is not None and \
+            warm_start_vel is not None and \
+            warm_start_quat is not None and \
+            warm_start_ang_vel is not None:
 
+            for i in range(self.N - 1):
+                self.opti.set_initial(self.p[:, i], warm_start_pos[:, i+1])
+                self.opti.set_initial(self.v[:, i], warm_start_vel[:, i+1])
+                self.opti.set_initial(self.q[:, i], warm_start_quat[:, i+1])
+                self.opti.set_initial(self.w[:, i], warm_start_ang_vel[:, i+1]) 
+
+
+        else:
+            for i in range(self.N):
+                self.opti.set_initial(self.p[:, i], start_pos)
+                self.opti.set_initial(self.v[:, i], start_vel)
+                self.opti.set_initial(self.q[:, i], start_quat)
+                self.opti.set_initial(self.w[:, i], start_ang_vel)
         try:
+            start_time = time.time()
             self.sol = self.opti.solve()
+            print(f"Solver time: {time.time() - start_time}")
+            #if warm_start_pos is not None:
+            #    for i in range(self.N - 1):
+            #        print(f"Diff : {np.linalg.norm(self.sol.value(self.p)[:, i] - warm_start_pos[:, i+1])}")
+
             return self.sol
-        except:
+        except RuntimeError as e:
+            print(f"Solver failed: {e}")
             return None
