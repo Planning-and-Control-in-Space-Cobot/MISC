@@ -1,133 +1,215 @@
-# 2D Polytope - Ellipsoid Obstacle avoidance considering attitude on both polytope and ellipsoid 
-# This method is based on the paper "Efficient Collision Modelling for Numerical Optimal Control" - Section 3.B
-# 3D Polytope - Ellipsoid Obstacle avoidance considering full SO(3) attitude
-# 3D Ellipsoidal Robot - Polytope Obstacle avoidance using dual constraints (Proposition 3)
-# 3D Ellipsoidal Robot with Rotation - Polytope Obstacle avoidance using dual constraints (Proposition 3)
-# 3D Ellipsoidal Robot with Rotation - Polytope Obstacle avoidance using dual constraints (Proposition 3)
 import casadi as ca
+import spatial_casadi as sc
+import scipy.spatial.transform as trf
 import numpy as np
 import pyvista as pv
+import json
+import os
+from datetime import datetime
+from time import time
+import itertools
+import multiprocessing as mp
 
-import spatial_casadi as sc
 
-# Problem parameters
-N = 20
-n_w = 3
-n_ov = 8
+class Obstacle:
+    def __init__(self, vertices_local, position, rotation=np.eye(3), safety_distance=0.01):
+        self.vertices_local = vertices_local
+        self.position = position
+        self.rotation = rotation
+        self.safety_distance = safety_distance
 
-V_local_obstacle = np.array([
-    [-0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5],
-    [-0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5],
-    [-0.5, -0.5, -0.5, -0.5,  0.5,  0.5,  0.5,  0.5]
-])
+    def global_vertices(self):
+        return self.rotation @ self.vertices_local + self.position[:, None]
 
-obstacle_pos = np.array([2.5, 2.0, 1.5])
-V_O = V_local_obstacle + obstacle_pos[:, None]
 
-P_R_base = np.diag([0.24, 0.24, 0.10])
-delta_min = 0.01
+class Map:
+    def __init__(self):
+        self.obstacles = []
 
-opti = ca.Opti()
+    def add_obstacle(self, obstacle):
+        self.obstacles.append(obstacle)
 
-x = opti.variable(N)
-y = opti.variable(N)
-z = opti.variable(N)
-roll = opti.variable(N)
-pitch = opti.variable(N)
-yaw = opti.variable(N)
 
-xi = opti.variable(n_w, N)
-mu_o = opti.variable(1, N)
-nu = opti.variable(1, N)
+class TrajectoryGeneration:
+    def __init__(self, N=40, save_dir="results"):
+        self.N = N
+        self.save_dir = save_dir
+        os.makedirs(self.save_dir, exist_ok=True)
 
-J = 0
-for i in range(N - 1):
-    J += (x[i+1] - x[i])**2 + (y[i+1] - y[i])**2 + (z[i+1] - z[i])**2
-opti.minimize(J)
+        self.P_R_base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
+        self.map_env = self.create_map()
 
-opti.subject_to(x[0] == -3)
-opti.subject_to(y[0] == -3)
-opti.subject_to(z[0] == 0)
-opti.subject_to(x[-1] == 6)
-opti.subject_to(y[-1] == 6)
-opti.subject_to(z[-1] == 3)
+    def create_map(self):
+        map_env = Map()
+        vertices_obstacle = np.array([
+            [0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0],
+            [0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0]
+        ])
+        pos_list = [np.array([2.0, 0, 0]), np.array([2.0, 2.3, 0.0]), np.array([0.0, 2.3, 0.0])]
+        for pos in pos_list:
+            map_env.add_obstacle(Obstacle(vertices_obstacle, pos))
+        return map_env
 
-for i in range(N):
-    c_R = ca.vertcat(x[i], y[i], z[i])
+    def run(self, param_set, solver_opts=None):
+        result = {
+            "params": {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in param_set.items()},
+            "solver_opts": solver_opts,
+            "status": "failed",
+            "time": None,
+            "final_error": None,
+            "trajectory_file": None
+        }
+        t_start = time()
 
-    cr = ca.cos(roll[i]); sr = ca.sin(roll[i])
-    cp = ca.cos(pitch[i]); sp = ca.sin(pitch[i])
-    cy = ca.cos(yaw[i]); sy = ca.sin(yaw[i])
+        try:
+            opti = ca.Opti()
+            x = opti.variable(13, self.N)
+            u = opti.variable(6, self.N)
+            dt = opti.variable(1)
+            opti.subject_to(opti.bounded(0.05, dt, 0.5))
+            opti.set_initial(dt, 0.1)
 
-    R = ca.vertcat(
-        ca.horzcat(cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr),
-        ca.horzcat(sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr),
-        ca.horzcat(-sp,   cp*sr,            cp*cr)
-    )
-    P_R_inv = R @ ca.DM(np.linalg.inv(P_R_base)) @ R.T
+            x0 = opti.parameter(13)
+            xf = opti.parameter(13)
+            opti.set_value(x0, param_set["x0"])
+            opti.set_value(xf, param_set["xf"])
 
-    con1 = (1/4) * ca.dot(xi[:, i], xi[:, i]) + ca.dot(xi[:, i], c_R) + mu_o[0, i] + nu[0, i] + delta_min**2
-    con2 = - V_O.T @ xi[:, i] - mu_o[0, i]
-    con3 = ca.dot(xi[:, i], xi[:, i]) - 4 * delta_min**2
-    xi_Pinv_xi = xi[:, i].T @ P_R_inv @ xi[:, i]
-    con4 = nu[0, i]**2 - xi_Pinv_xi
+            J = opti.parameter(3, 3)
+            A = opti.parameter(6, 6)
+            m = opti.parameter(1)
+            opti.set_value(J, param_set["J"])
+            opti.set_value(A, param_set["A"])
+            opti.set_value(m, param_set["m"])
 
-    opti.subject_to(con1 <= 0)
-    opti.subject_to(con2 <= 0)
-    opti.subject_to(con3 >= 0)
-    opti.subject_to(con4 >= 0)
-    opti.subject_to(nu[0, i] >= 0)
+            pos, vel, quat, ang_vel = x[:3, :], x[3:6, :], x[6:10, :], x[10:, :]
+            opti.subject_to(x[:, 0] == x0)
 
-opti.solver("ipopt")
-sol = opti.solve()
+            for i in range(self.N - 1):
+                F = ca.mtimes(A[:3, :], u[:, i])
+                M = ca.mtimes(A[3:, :], u[:, i])
+                R_current = sc.Rotation.from_quat(quat[:, i])
+                opti.subject_to(pos[:, i + 1] == pos[:, i] + dt * vel[:, i])
+                opti.subject_to(vel[:, i + 1] == vel[:, i] + dt * (1 / m) * ca.mtimes(R_current.as_matrix(), F))
+                opti.subject_to(quat[:, i + 1] == self.quaternion_integration(quat[:, i], ang_vel[:, i], dt))
+                opti.subject_to(ang_vel[:, i + 1] == ang_vel[:, i] + dt * ca.mtimes(ca.inv(J), M - ca.cross(ang_vel[:, i], ca.mtimes(J, ang_vel[:, i]))))
 
-x_val = sol.value(x)
-y_val = sol.value(y)
-z_val = sol.value(z)
-roll_val = sol.value(roll)
-pitch_val = sol.value(pitch)
-yaw_val = sol.value(yaw)
+            for i in range(self.N):
+                opti.subject_to(opti.bounded(-2, u[:, i], 2))
+                opti.set_initial(quat[:, i], np.array([0, 0, 0, 1]))
+                opti.subject_to(opti.bounded(0, pos[2, i], 5))
+                opti.subject_to(pos[1, i] >= 0)
 
-plotter = pv.Plotter()
+            for obs in self.map_env.obstacles:
+                xi = opti.variable(3, self.N)
+                mu_r = opti.variable(1, self.N)
+                nu = opti.variable(1, self.N)
 
-# Draw obstacle (box)
-faces = [[0,1,2,3],[4,5,6,7],[0,1,5,4],
-         [2,3,7,6],[1,2,6,5],[4,7,3,0]]
-verts = [V_O[:, f].T for f in faces]
+                V_O = obs.global_vertices()
+                delta_min = obs.safety_distance
 
-for face in verts:
-    plotter.add_mesh(pv.PolyData(face), color="salmon", opacity=0.4)
+                for i in range(self.N):
+                    opti.set_initial(xi[:, i], np.array([2 * delta_min, 0, 0]))
+                    opti.set_initial(mu_r[0, i], 0)
+                    opti.set_initial(nu[0, i], 0.1)
 
-# Draw ellipsoidal robot at each step
-for i in range(N):
-    c = np.array([x_val[i], y_val[i], z_val[i]])
+                    c_R = pos[:, i]
+                    R_current = sc.Rotation.from_quat(quat[:, i]).as_matrix()
+                    P_R_inv = R_current @ ca.DM(np.linalg.inv(self.P_R_base)) @ R_current.T
 
-    cr, sr = np.cos(roll_val[i]), np.sin(roll_val[i])
-    cp, sp = np.cos(pitch_val[i]), np.sin(pitch_val[i])
-    cy, sy = np.cos(yaw_val[i]), np.sin(yaw_val[i])
+                    opti.subject_to(- (1 / 4) * ca.dot(xi[:, i], xi[:, i]) - ca.dot(xi[:, i], c_R) - mu_r[0, i] - nu[0, i] - delta_min ** 2 >= 0)
+                    opti.subject_to(V_O.T @ xi[:, i] + mu_r[0, i] >= 0)
+                    opti.subject_to(ca.dot(xi[:, i], xi[:, i]) >= 4 * delta_min ** 2)
+                    opti.subject_to(nu[0, i] ** 2 >= ca.dot(xi[:, i], ca.mtimes(P_R_inv, xi[:, i])))
+                    opti.subject_to(nu[0, i] >= 0)
 
-    R = np.array([
-        [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
-        [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
-        [-sp,   cp*sr,            cp*cr]
-    ])
+            cost = 0
+            for i in range(self.N):
+                cost += ca.mtimes((pos[:, i] - xf[:3]).T, (pos[:, i] - xf[:3]))
+            cost += 1000 * dt
+            opti.minimize(cost)
 
-    U, s, _ = np.linalg.svd(P_R_base)
-    radii = 1. / np.sqrt(s)
-    u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-    x_e = radii[0] * np.cos(u) * np.sin(v)
-    y_e = radii[1] * np.sin(u) * np.sin(v)
-    z_e = radii[2] * np.cos(v)
-    ellipsoid = np.array([x_e, y_e, z_e]).reshape(3, -1)
-    rotated = R @ ellipsoid
-    X = rotated[0].reshape(u.shape) + c[0]
-    Y = rotated[1].reshape(u.shape) + c[1]
-    Z = rotated[2].reshape(u.shape) + c[2]
-    surf = pv.StructuredGrid(X, Y, Z)
-    plotter.add_mesh(surf, color="skyblue", opacity=0.3)
+            solver_opts["max_iter"] = 10000
+            solver_opts["max_cpu_time"] = 180
+            solver_opts["print_level"] = 0
 
-# Plot trajectory
-trajectory = np.vstack((x_val, y_val, z_val)).T
-plotter.add_lines(trajectory, color="black")
-plotter.show_grid()
-plotter.show()
+            opti.solver("ipopt", {"print_time": 0}, solver_opts)
+            sol = opti.solve()
+
+            final_pos = sol.value(x[:3, -1])
+            desired_pos = param_set["xf"][:3]
+            error = np.linalg.norm(final_pos - desired_pos)
+
+            result.update({
+                "status": "success",
+                "time": time() - t_start,
+                "final_error": error
+            })
+
+            traj_filename = os.path.join(
+                self.save_dir,
+                f"traj_tol_{solver_opts['tol']:.1e}_viol_{solver_opts['constr_viol_tol']:.1e}_dual_{solver_opts['dual_inf_tol']:.1e}.npz"
+            )
+            np.savez(traj_filename, x=sol.value(x), u=sol.value(u))
+            result["trajectory_file"] = traj_filename
+
+        except Exception as e:
+            result["error_msg"] = str(e)
+
+        return result
+
+    def save_result(self, all_results):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{self.save_dir}/batch_results_{timestamp}.json"
+        with open(filename, "w") as f:
+            json.dump(all_results, f, indent=4)
+
+    def quaternion_integration(self, q, w, dt):
+        w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
+        q_ = ca.vertcat(w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2))
+        return self.quaternion_multiplication(q_, q)
+
+    def quaternion_multiplication(self, q1, q2):
+        q1x, q1y, q1z, q1w = q1[0], q1[1], q1[2], q1[3]
+        q2x, q2y, q2z, q2w = q2[0], q2[1], q2[2], q2[3]
+        q_ = ca.vertcat(
+            ca.horzcat(q1w, q1z, -q1y, q1x),
+            ca.horzcat(-q1z, q1w, q1x, q1y),
+            ca.horzcat(q1y, -q1x, q1w, q1z),
+            ca.horzcat(-q1x, -q1y, -q1z, q1w),
+        )
+        return q_ @ ca.vertcat(q2x, q2y, q2z, q2w)
+
+
+def run_instance(args):
+    tg_local = TrajectoryGeneration()
+    return tg_local.run(*args)
+
+
+if __name__ == "__main__":
+    base_params = {
+        "x0": np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
+        "xf": np.array([8, 3, 0, 0, 0, 0, 0.707, 0, 0, 0.707, 0, 0, 0]),
+        "J": np.load("J_matrix.npy"),
+        "A": np.load("A_matrix.npy"),
+        "m": np.load("mass.npy")
+    }
+
+    base_tol = 1e-4
+    exponents = np.arange(-3, 4)
+    scale_factors = 10.0 ** exponents
+
+    param_sets = []
+    for tol_sf, viol_sf, dual_inf_sf in itertools.product(scale_factors, repeat=3):
+        solver_opts = {
+            "tol": base_tol * tol_sf,
+            "constr_viol_tol": base_tol * viol_sf,
+            "dual_inf_tol": base_tol * dual_inf_sf,
+        }
+        param_sets.append((base_params, solver_opts))
+
+    with mp.Pool(processes=4) as pool:
+        all_results = pool.map(run_instance, param_sets)
+
+    TrajectoryGeneration().save_result(all_results)
+    print(f"Completed {len(all_results)} runs.")
