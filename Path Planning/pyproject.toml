@@ -1,7 +1,7 @@
 [project]
-name = "3d"
+name = "PathPlanner"
 version = "0.1.0"
-description = "Trajectory planner for a 3D environemnt with static and moving obstacle avoidance"
+description = "All work necessary for a real time path planner considering the Total volume of the robot, as well as the the attitude in a non convex environment"
 readme = "README.md"
 authors = [
     { name = "andre-rebelo-teixera", email = "andre.rebelo.teixeira@hotmail.com" }
@@ -14,5 +14,11 @@ dependencies = [
     "scipy>=1.15.2",
     "spatial-casadi>=1.1.0",
     "trimesh>=4.6.4",
+    "open3d>=0.19.0",
+    "python-fcl==0.7.0.8",
 ]
 
+[project.scripts]
+#run-3d = "3D.main:main"
+rrtSin = "RRT.RRT:main"
+rrtOpt = "RRT.main:main"
