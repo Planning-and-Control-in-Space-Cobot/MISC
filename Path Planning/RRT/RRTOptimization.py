@@ -164,6 +164,7 @@ class RRTPathOptimization:
             mesh.transform(T)
             plotter.add_mesh(mesh, color="blue", opacity=0.4)
         plotter.add_axes()
+        plotter.export_html("OptimizedTrajectory.html")
         plotter.show()
 
 def main():
@@ -182,4 +183,3 @@ def main():
 if __name__ == "__main__":
     main()
         
-
