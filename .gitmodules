@@ -1,3 +1,0 @@
-[submodule "transport_mpc"]
-	path = transport_mpc
-	url = git@github.com:pSujet/transport_mpc.git

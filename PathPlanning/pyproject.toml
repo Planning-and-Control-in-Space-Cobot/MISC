@@ -1,0 +1,29 @@
+[project]
+name = "PathPlanner"
+version = "0.1.0"
+description = "All work necessary for a real time path planner considering the Total volume of the robot, as well as the the attitude in a non convex environment"
+readme = "README.md"
+authors = [
+    { name = "andre-rebelo-teixera", email = "andre.rebelo.teixeira@hotmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "casadi>=3.6.7",
+    "numpy>2.0",
+    "pyvista>=0.44.2",
+    "scipy>=1.15.2",
+    "spatial-casadi>=1.1.0",
+    "trimesh>=4.6.4",
+    "open3d>=0.19.0",
+    "python-fcl==0.7.0.8",
+    "trame==3.8.2", 
+    "trame-client==3.7.1", 
+    "trame-server==3.4.0", 
+    "trame-vtk==2.8.15", 
+    "trame-vuetify==3.0.1"
+]
+
+[project.scripts]
+#run-3d = "3D.main:main"
+rrtSin = "RRT.RRT:main"
+rrtOpt = "RRT.main:main"
