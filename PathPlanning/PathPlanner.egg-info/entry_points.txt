@@ -1,3 +1,0 @@
-[console_scripts]
-rrtOpt = RRT.main:main
-rrtSin = RRT.RRT:main
