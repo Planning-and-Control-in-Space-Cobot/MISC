@@ -10,10 +10,10 @@ requires-python = ">=3.12"
 dependencies = [
     "casadi>=3.6.7",
     "numpy>2.0",
-    "pyvista>=0.44.2",
+    "pyvista>=0.45.0",
     "scipy>=1.15.2",
     "spatial-casadi>=1.1.0",
-    "trimesh>=4.6.4",
+    "trimesh>=4.6.8",
     "open3d>=0.19.0",
     "python-fcl==0.7.0.8",
     "trame==3.8.2", 
@@ -23,7 +23,13 @@ dependencies = [
     "trame-vuetify==3.0.1"
 ]
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [project.scripts]
-#run-3d = "3D.main:main"
 rrtSin = "RRT.RRT:main"
 rrtOpt = "RRT.main:main"
+map = "MapCreation.main:main"

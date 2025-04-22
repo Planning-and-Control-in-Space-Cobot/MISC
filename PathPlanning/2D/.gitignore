@@ -1,6 +1,0 @@
-*.png
-teste*.py
-
-plots/
-*.npy
-!A_matrix.npy
