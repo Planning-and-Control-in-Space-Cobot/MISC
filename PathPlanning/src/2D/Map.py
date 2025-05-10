@@ -125,14 +125,10 @@ class Map:
         x_coords, y_coords = trajectory[:, 0], trajectory[:, 1]
 
         # Plot the trajectory
-        plt.plot(
-            x_coords, y_coords, color="red", linewidth=2, label="Trajectory"
-        )
+        plt.plot(x_coords, y_coords, color="red", linewidth=2, label="Trajectory")
         plt.scatter(
             self.start[0], self.start[1], color="green", label="Start", zorder=5
         )
-        plt.scatter(
-            self.goal[0], self.goal[1], color="blue", label="Goal", zorder=5
-        )
+        plt.scatter(self.goal[0], self.goal[1], color="blue", label="Goal", zorder=5)
 
         plt.legend()

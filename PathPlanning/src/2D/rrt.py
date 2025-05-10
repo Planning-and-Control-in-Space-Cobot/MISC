@@ -63,10 +63,7 @@ class PathPlanning:
     def _get_near_nodes(self, node_list, new_node):
         near_nodes = []
         for node in node_list:
-            if (
-                np.hypot(node.x - new_node.x, node.y - new_node.y)
-                <= self.radius
-            ):
+            if np.hypot(node.x - new_node.x, node.y - new_node.y) <= self.radius:
                 near_nodes.append(node)
         return near_nodes
 
@@ -127,9 +124,7 @@ class PathPlanning:
                     cost = near_node.cost + np.hypot(
                         new_node.x - near_node.x, new_node.y - near_node.y
                     )
-                    if cost < min_cost and self._is_collision_free(
-                        near_node, new_node
-                    ):
+                    if cost < min_cost and self._is_collision_free(near_node, new_node):
                         min_cost = cost
                         best_node = near_node
 

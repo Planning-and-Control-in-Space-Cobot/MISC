@@ -83,9 +83,7 @@ class TrajectoryOptimizer:
         opti.subject_to(
             x[:, 0] == self.origin
         )  # Ensure the trajectory starts at the origin
-        opti.subject_to(
-            x[:, -1] == self.goal
-        )  # Ensure the trajectory ends at the goal
+        opti.subject_to(x[:, -1] == self.goal)  # Ensure the trajectory ends at the goal
         opti.subject_to(v[:, 0] == 0)  # Ensure the initial velocity is zero
         opti.subject_to(v[:, -1] == 0)  # Ensure the final velocity is zero
 

@@ -78,10 +78,7 @@ def run_experiment(experiment_id, base_dir):
 
     while True:
         goal = random_point()
-        if (
-            not any(obs.contains(Point(goal)) for obs in obstacles)
-            and goal != start
-        ):
+        if not any(obs.contains(Point(goal)) for obs in obstacles) and goal != start:
             break
 
     map = Map(x_size, y_size, start, goal, obstacles=obstacles)
@@ -112,9 +109,7 @@ def run_experiment(experiment_id, base_dir):
             # Plot the SDF
             norm_sdf = TwoSlopeNorm(vmin=0, vcenter=0.01, vmax=sdf.sdf.max())
             cmap_sdf = plt.cm.bwr_r
-            sdf_plot = plt.imshow(
-                sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf
-            )
+            sdf_plot = plt.imshow(sdf.sdf, origin="lower", cmap=cmap_sdf, norm=norm_sdf)
 
             # Add first colorbar for SDF
             cbar_sdf = plt.colorbar(sdf_plot, fraction=0.05, pad=0.04)
@@ -178,9 +173,7 @@ def main():
             print(f"Running experiment {i}...")
             run_experiment(i, base_dir)
 
-        print(
-            "All experiments completed. Check the 'plots' directory for results."
-        )
+        print("All experiments completed. Check the 'plots' directory for results.")
 
     else:
         print("Running in normal mode.")
