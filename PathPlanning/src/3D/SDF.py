@@ -5,7 +5,9 @@ import casadi as ca
 
 
 class SDF:
-    def __init__(self, definition_x, definition_y, definition_z, max_value, map_instance):
+    def __init__(
+        self, definition_x, definition_y, definition_z, max_value, map_instance
+    ):
         self.definition_x = definition_x
         self.definition_y = definition_y
         self.definition_z = definition_z

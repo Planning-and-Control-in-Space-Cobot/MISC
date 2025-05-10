@@ -21,10 +21,13 @@ from SpaceCobotModel import SpaceCobot
 # New imports
 from ellipsoid_Optimizer import EllipsoidOptimizer, AABBObstacle
 
+
 def main():
     np.set_printoptions(linewidth=200, suppress=True, precision=6)
     scene = tm.load("space_cobot.stl")
-    space_cobot_mesh = scene.geometry.values()[0] if isinstance(scene, tm.Scene) else scene
+    space_cobot_mesh = (
+        scene.geometry.values()[0] if isinstance(scene, tm.Scene) else scene
+    )
     vertices = space_cobot_mesh.vertices
     faces = np.hstack([[3] + list(face) for face in space_cobot_mesh.faces])
     space_cobot_mesh = pv.PolyData(vertices, faces)
@@ -70,11 +73,18 @@ def main():
 
     initial_position = [0, 0, 0]
     initial_velocity = [0, 0, 0]
-    initial_quaternion = trf.Rotation.from_euler("xyz", [90, 0, 0], degrees=True).as_quat()
+    initial_quaternion = trf.Rotation.from_euler(
+        "xyz", [90, 0, 0], degrees=True
+    ).as_quat()
     initial_angular_velocity = [0, 0, 0]
 
     initial_state = np.concatenate(
-        [initial_position, initial_velocity, initial_quaternion, initial_angular_velocity]
+        [
+            initial_position,
+            initial_velocity,
+            initial_quaternion,
+            initial_angular_velocity,
+        ]
     )
 
     final_pos = [4, 4, 4]
@@ -82,9 +92,7 @@ def main():
     final_quat = trf.Rotation.from_euler("xyz", [0, 0, 0], degrees=True).as_quat()
     final_ang_vel = [0, 0, 0]
 
-    final_state = np.concatenate(
-        [final_pos, final_vel, final_quat, final_ang_vel]
-    )
+    final_state = np.concatenate([final_pos, final_vel, final_quat, final_ang_vel])
 
     m = np.load("mass.npy")
     A = np.load("A_matrix.npy")
@@ -152,17 +160,32 @@ def main():
 
     # Define AABB obstacles
     aabb_obstacles_list = [
-        AABBObstacle(x_min=1.5, y_min=1.5, z_min=1.5, x_max=2.5, y_max=2.5, z_max=2.5, safety_margin=0.2),
-        #AABBObstacle(x_min=-1, y_min=-1, z_min=0, x_max=0, y_max=1, z_max=1, safety_margin=0.2),
+        AABBObstacle(
+            x_min=1.5,
+            y_min=1.5,
+            z_min=1.5,
+            x_max=2.5,
+            y_max=2.5,
+            z_max=2.5,
+            safety_margin=0.2,
+        ),
+        # AABBObstacle(x_min=-1, y_min=-1, z_min=0, x_max=0, y_max=1, z_max=1, safety_margin=0.2),
     ]
 
     # Initialize and Setup the Ellipsoid Optimizer
     ellipsoid_optimizer = EllipsoidOptimizer(m, J, A)
-    ellipsoid_optimizer.setup_problem(N=40, dt=0.1, aabb_obstacles_list=aabb_obstacles_list)
+    ellipsoid_optimizer.setup_problem(
+        N=40, dt=0.1, aabb_obstacles_list=aabb_obstacles_list
+    )
 
     # Solve for optimal trajectory while avoiding AABB obstacles
     solution = ellipsoid_optimizer.solve(
-        initial_position, initial_velocity, initial_quaternion, initial_angular_velocity, final_pos, final_quat
+        initial_position,
+        initial_velocity,
+        initial_quaternion,
+        initial_angular_velocity,
+        final_pos,
+        final_quat,
     )
 
     state = np.array(state).T
@@ -180,7 +203,7 @@ def main():
 
     plotter = map_instance.plot()
 
-    #for pos, vel, quat in zip(pos_states.T, vel_norms, quat_states.T):
+    # for pos, vel, quat in zip(pos_states.T, vel_norms, quat_states.T):
     #    cp_mesh = space_cobot_mesh.copy()
     #    cp_mesh.points = trf.Rotation.from_quat(quat).apply(cp_mesh.points)
     #    cp_mesh.translate(pos, inplace=True)
@@ -188,7 +211,7 @@ def main():
 
     ellipsoid_robot = pv.ParametricEllipsoid(0.24, 0.24, 0.10)
 
-    if solution is None: 
+    if solution is None:
         print("No solution found")
         return
     pos_ = solution.value(ellipsoid_optimizer.p).T
@@ -196,10 +219,10 @@ def main():
 
     for p, q in zip(pos_, quat_):
         new_ellipse = ellipsoid_robot.copy()
-        
+
         # Convert quaternion to a 3x3 rotation matrix
         rotation_matrix = trf.Rotation.from_quat(q).as_matrix()
-        
+
         # Create a 4x4 homogeneous transformation matrix
         transformation_matrix = np.eye(4)  # Identity matrix
         transformation_matrix[:3, :3] = rotation_matrix  # Insert rotation
@@ -207,25 +230,23 @@ def main():
 
         # Apply transformation
         new_ellipse.transform(transformation_matrix)
-        plotter.add_mesh(new_ellipse, color='green', opacity=0.5)
-    
+        plotter.add_mesh(new_ellipse, color="green", opacity=0.5)
 
-
-    #spline = pv.Spline(solution.value(ellipsoid_optimizer.p).T, solution.value(ellipsoid_optimizer.p).shape[1] * 10)
-    #plotter.add_mesh(spline, color='blue', line_width=3, label='Ellipsoid Optimizer Path')
+    # spline = pv.Spline(solution.value(ellipsoid_optimizer.p).T, solution.value(ellipsoid_optimizer.p).shape[1] * 10)
+    # plotter.add_mesh(spline, color='blue', line_width=3, label='Ellipsoid Optimizer Path')
 
     obstacle_ellipsoid = pv.ParametricEllipsoid(0.5, 0.5, 1.0)
     obstacle_ellipsoid.translate(2, 2, 2)
 
-    #plotter.add_mesh(obstacle_ellipsoid, color='red', opacity=0.5, label='Obstacle Ellipsoid')
+    # plotter.add_mesh(obstacle_ellipsoid, color='red', opacity=0.5, label='Obstacle Ellipsoid')
     box_obstacle = pv.Box([1.5, 2.5, 1.5, 2.5, 1.5, 2.5])
-    plotter.add_mesh(box_obstacle, color='red', opacity=0.1, label='Obstacle Ellipsoid')
-
+    plotter.add_mesh(box_obstacle, color="red", opacity=0.1, label="Obstacle Ellipsoid")
 
     print("Ellipsoid Path: ", solution.value(ellipsoid_optimizer.p).T)
 
     plotter.add_legend()
     plotter.show()
+
 
 if __name__ == "__main__":
     main()

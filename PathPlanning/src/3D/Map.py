@@ -19,19 +19,13 @@ class Map:
         plotter.add_axes(interactive=True, line_width=3, labels_off=False)
 
         # Create a bounding box to represent the full map dimensions
-        bounding_box = pv.Box(
-            bounds=(0, self.size_x, 0, self.size_y, 0, self.size_z)
-        )
-        plotter.add_mesh(
-            bounding_box, color="gray", opacity=0.1, style="wireframe"
-        )
+        bounding_box = pv.Box(bounds=(0, self.size_x, 0, self.size_y, 0, self.size_z))
+        plotter.add_mesh(bounding_box, color="gray", opacity=0.1, style="wireframe")
 
         for mesh, color in self.obstacles:
             faces = np.hstack([[len(face)] + list(face) for face in mesh.faces])
             poly_data = pv.PolyData(mesh.vertices, faces)
-            plotter.add_mesh(
-                poly_data, color=color, opacity=0.5, show_edges=True
-            )
+            plotter.add_mesh(poly_data, color=color, opacity=0.5, show_edges=True)
 
         return plotter
 

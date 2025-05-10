@@ -2,8 +2,10 @@ import casadi as ca
 import numpy as np
 import spatial_casadi as sc
 
+
 class AABBObstacle:
     """Axis-Aligned Bounding Box (AABB) Obstacle"""
+
     def __init__(self, x_min, y_min, z_min, x_max, y_max, z_max, safety_margin=0.1):
         self.x_min, self.y_min, self.z_min = x_min, y_min, z_min
         self.x_max, self.y_max, self.z_max = x_max, y_max, z_max
@@ -16,6 +18,7 @@ class AABBObstacle:
         pz = ca.fmax(self.z_min, ca.fmin(p[2], self.z_max))
         return ca.vertcat(px, py, pz)
 
+
 class EllipsoidOptimizer:
     def __init__(self, m, J, A):
         if not self.check_mechanical_parameters(m, J, A):
@@ -24,7 +27,13 @@ class EllipsoidOptimizer:
 
     @staticmethod
     def check_mechanical_parameters(m, J, A):
-        return A.shape == (6, 6) and J.shape == (3, 3) and np.all(J >= 0) and m.shape == (1,) and m > 0
+        return (
+            A.shape == (6, 6)
+            and J.shape == (3, 3)
+            and np.all(J >= 0)
+            and m.shape == (1,)
+            and m > 0
+        )
 
     @staticmethod
     def quaternion_multiplication(q1, q2):
@@ -42,9 +51,7 @@ class EllipsoidOptimizer:
     def quaternion_integration(q, w, dt):
         """Quaternion integration using Rodrigues formula"""
         w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
-        q_ = ca.vertcat(
-            w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)
-        )
+        q_ = ca.vertcat(w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2))
         return EllipsoidOptimizer.quaternion_multiplication(q_, q)
 
     def setup_problem(self, N=60, dt=0.1, aabb_obstacles_list=None):
@@ -91,9 +98,18 @@ class EllipsoidOptimizer:
             M = ca.mtimes(A_[3:, :], self.u[:, i])
 
             self.opti.subject_to(self.p[:, i + 1] == self.p[:, i] + self.v[:, i] * dt)
-            self.opti.subject_to(self.v[:, i + 1] == self.v[:, i] + (R.as_matrix() @ F) / m * dt)
-            self.opti.subject_to(self.q[:, i + 1] == self.quaternion_integration(self.q[:, i], self.w[:, i], dt))
-            self.opti.subject_to(self.w[:, i + 1] == self.w[:, i] + ca.inv(J_) @ (M - ca.cross(self.w[:, i], J_ @ self.w[:, i])) * dt)
+            self.opti.subject_to(
+                self.v[:, i + 1] == self.v[:, i] + (R.as_matrix() @ F) / m * dt
+            )
+            self.opti.subject_to(
+                self.q[:, i + 1]
+                == self.quaternion_integration(self.q[:, i], self.w[:, i], dt)
+            )
+            self.opti.subject_to(
+                self.w[:, i + 1]
+                == self.w[:, i]
+                + ca.inv(J_) @ (M - ca.cross(self.w[:, i], J_ @ self.w[:, i])) * dt
+            )
 
         # Quaternion normalization
         for i in range(N):
@@ -118,8 +134,12 @@ class EllipsoidOptimizer:
             R_des = sc.Rotation.from_quat(self.q_n, "xyzw")
 
             cost += self.u[:, i].T @ self.u[:, i]  # Minimize actuation
-            cost += (self.p[:, i] - self.p_n).T @ 100 @ (self.p[:, i] - self.p_n)  # Minimize position error
-            cost += 100 * 0.5 * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)  # Minimize orientation error
+            cost += (
+                (self.p[:, i] - self.p_n).T @ 100 @ (self.p[:, i] - self.p_n)
+            )  # Minimize position error
+            cost += (
+                100 * 0.5 * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)
+            )  # Minimize orientation error
 
         self.opti.minimize(cost)
         self.opti.solver("ipopt")

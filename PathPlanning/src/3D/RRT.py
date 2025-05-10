@@ -10,9 +10,7 @@ class Node:
 
 
 class RRT:
-    def __init__(
-        self, start, goal, map_instance, step_size=0.5, max_iterations=1000
-    ):
+    def __init__(self, start, goal, map_instance, step_size=0.5, max_iterations=1000):
         self.start = Node(start)
         self.goal = Node(goal)
         self.map = map_instance
@@ -43,9 +41,7 @@ class RRT:
 
     def reached_goal(self, node):
         """Checks if a node is close enough to the goal."""
-        return (
-            np.linalg.norm(node.position - self.goal.position) < self.step_size
-        )
+        return np.linalg.norm(node.position - self.goal.position) < self.step_size
 
     def plan_path(self):
         """Executes the RRT algorithm."""

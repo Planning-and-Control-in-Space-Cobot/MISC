@@ -3,6 +3,7 @@ import spatial_casadi as sc
 import numpy as np
 import time
 
+
 class LongHorizonMPC:
     def __init__(self, sdf, map):
         self.sdf = sdf
@@ -61,9 +62,7 @@ class LongHorizonMPC:
 
         w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
 
-        q_ = ca.vertcat(
-            w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)
-        )
+        q_ = ca.vertcat(w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2))
 
         return self.quaternion_multiplication(q_, q)
 
@@ -144,9 +143,7 @@ class LongHorizonMPC:
 
             self.opti.subject_to(
                 self.q[:, i + 1]
-                == self.quaternion_integration(
-                    self.q[:, i], self.w[:, i], self.dt
-                )
+                == self.quaternion_integration(self.q[:, i], self.w[:, i], self.dt)
             )
             self.opti.subject_to(
                 self.w[:, i + 1]
@@ -158,8 +155,8 @@ class LongHorizonMPC:
 
         for i in range(N):
             self.opti.subject_to(self.opti.bounded(-2, self.u[:, i], 2))
-            #self.opti.subject_to(self.sdf(self.p[:, i]) > 1)
-            #self.opti.subject_to(ca.norm_2(self.q[:, i]) == 1)
+            # self.opti.subject_to(self.sdf(self.p[:, i]) > 1)
+            # self.opti.subject_to(ca.norm_2(self.q[:, i]) == 1)
 
         cost = 0
 
@@ -167,34 +164,34 @@ class LongHorizonMPC:
             R = sc.Rotation.from_quat(self.q[:, i], "xyzw")
             R_des = sc.Rotation.from_quat(self.q_n, "xyzw")
 
-            cost += (
-                (self.p[:, i] - self.p_n).T
-                @ goal_cost
-                @ (self.p[:, i] - self.p_n)
-            )
+            cost += (self.p[:, i] - self.p_n).T @ goal_cost @ (self.p[:, i] - self.p_n)
 
-            self.opti.subject_to(self.cost_vector[0, i] == (self.p[:, i] - self.p_n).T @ goal_cost @ (self.p[:, i] - self.p_n))
-            cost += 10*(
-                1
-                / 2
-                * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)
+            self.opti.subject_to(
+                self.cost_vector[0, i]
+                == (self.p[:, i] - self.p_n).T @ goal_cost @ (self.p[:, i] - self.p_n)
             )
-            self.opti.subject_to(self.cost_vector[1, i] == 500 * ca.trace(ca.MX.eye(3) - R_des.as_matrix().T @ R.as_matrix()))
+            cost += 10 * (
+                1 / 2 * ca.trace(ca.MX.eye(3) - R.as_matrix() @ R_des.as_matrix().T)
+            )
+            self.opti.subject_to(
+                self.cost_vector[1, i]
+                == 500 * ca.trace(ca.MX.eye(3) - R_des.as_matrix().T @ R.as_matrix())
+            )
 
             cost += self.u[:, i].T @ actuation_cost @ self.u[:, i]
-            self.opti.subject_to(self.cost_vector[2, i] == self.u[:, i].T @ actuation_cost @ self.u[:, i])
-            #cost += 1 / (self.sdf(self.p[:, i])) * sdf_cost
-        
+            self.opti.subject_to(
+                self.cost_vector[2, i] == self.u[:, i].T @ actuation_cost @ self.u[:, i]
+            )
+            # cost += 1 / (self.sdf(self.p[:, i])) * sdf_cost
+
         cost += self.v[:, -1].T @ 200 * goal_cost @ self.v[:, -1]
         cost += self.w[:, -1].T @ 200 * goal_cost @ self.w[:, -1]
-
 
         self.opti.minimize(cost)
 
         p_opts = {
             "expand": False,
             "print_time": 0,
-
         }
         s_opts = {
             "max_cpu_time": 40,
@@ -214,10 +211,10 @@ class LongHorizonMPC:
         goal_vel,
         goal_quat,
         goal_ang_vel,
-        warm_start_pos = None, 
-        warm_start_vel = None, 
-        warm_start_quat = None,
-        warm_start_ang_vel = None
+        warm_start_pos=None,
+        warm_start_vel=None,
+        warm_start_quat=None,
+        warm_start_ang_vel=None,
     ):
         self.opti.set_value(self.p0, start_pos)
         self.opti.set_value(self.v0, start_vel)
@@ -229,17 +226,18 @@ class LongHorizonMPC:
         self.opti.set_value(self.q_n, goal_quat)
         self.opti.set_value(self.w_n, goal_ang_vel)
 
-        if warm_start_pos is not None and \
-            warm_start_vel is not None and \
-            warm_start_quat is not None and \
-            warm_start_ang_vel is not None:
+        if (
+            warm_start_pos is not None
+            and warm_start_vel is not None
+            and warm_start_quat is not None
+            and warm_start_ang_vel is not None
+        ):
 
             for i in range(self.N - 1):
-                self.opti.set_initial(self.p[:, i], warm_start_pos[:, i+1])
-                self.opti.set_initial(self.v[:, i], warm_start_vel[:, i+1])
-                self.opti.set_initial(self.q[:, i], warm_start_quat[:, i+1])
-                self.opti.set_initial(self.w[:, i], warm_start_ang_vel[:, i+1]) 
-
+                self.opti.set_initial(self.p[:, i], warm_start_pos[:, i + 1])
+                self.opti.set_initial(self.v[:, i], warm_start_vel[:, i + 1])
+                self.opti.set_initial(self.q[:, i], warm_start_quat[:, i + 1])
+                self.opti.set_initial(self.w[:, i], warm_start_ang_vel[:, i + 1])
 
         else:
             for i in range(self.N):
@@ -251,7 +249,7 @@ class LongHorizonMPC:
             start_time = time.time()
             self.sol = self.opti.solve()
             print(f"Solver time: {time.time() - start_time}")
-            #if warm_start_pos is not None:
+            # if warm_start_pos is not None:
             #    for i in range(self.N - 1):
             #        print(f"Diff : {np.linalg.norm(self.sol.value(self.p)[:, i] - warm_start_pos[:, i+1])}")
 

@@ -65,9 +65,7 @@ class TrajectoryOptimizer:
 
         w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
 
-        q_ = ca.vertcat(
-            w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)
-        )
+        q_ = ca.vertcat(w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2))
 
         return self.quaternion_multiplication(q_, q)
 
@@ -152,15 +150,12 @@ class TrajectoryOptimizer:
             )
             # V[t+1] = V[t] + dt * R * F[t] / m
             self.opti.subject_to(
-                self.v[:, i + 1]
-                == self.v[:, i] + self.dt * R.as_matrix() @ F / self.m
+                self.v[:, i + 1] == self.v[:, i] + self.dt * R.as_matrix() @ F / self.m
             )
 
             self.opti.subject_to(
                 self.q[:, i + 1]
-                == self.quaternion_integration(
-                    self.q[:, i], self.w[:, i], self.dt
-                )
+                == self.quaternion_integration(self.q[:, i], self.w[:, i], self.dt)
             )
 
             self.opti.subject_to(
