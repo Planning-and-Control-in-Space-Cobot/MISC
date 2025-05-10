@@ -5,11 +5,15 @@ import pyvista as pv
 # Load the CAD model
 scene = trimesh.load_mesh("space_cobot.stl")
 # Extract the first mesh from the scene
-space_cobot_mesh = scene.geometry.values()[0] if isinstance(scene, trimesh.Scene) else scene
+space_cobot_mesh = (
+    scene.geometry.values()[0] if isinstance(scene, trimesh.Scene) else scene
+)
 
 # Extract vertices and faces
 vertices = space_cobot_mesh.vertices
-faces = np.hstack([[3] + list(face) for face in space_cobot_mesh.faces])  # PyVista format
+faces = np.hstack(
+    [[3] + list(face) for face in space_cobot_mesh.faces]
+)  # PyVista format
 
 # Create a PyVista mesh
 cad_mesh = pv.PolyData(vertices, faces)
@@ -51,4 +55,3 @@ plotter.add_mesh(ellipsoid_mesh, color="red", opacity=0.4, label="Ellipsoid")
 plotter.add_axes()
 plotter.add_legend()
 plotter.show()
-

@@ -1,4 +1,4 @@
-# 2D Polytope - Ellipsoid Obstacle avoidance considering attitude on both polytope and ellipsoid 
+# 2D Polytope - Ellipsoid Obstacle avoidance considering attitude on both polytope and ellipsoid
 # This method is based on the paper "Efficient Collision Modelling for Numerical Optimal Control" - Section 3.B
 # 3D Polytope - Ellipsoid Obstacle avoidance considering full SO(3) attitude
 # 3D Ellipsoidal Robot - Polytope Obstacle avoidance using dual constraints (Proposition 3)
@@ -12,10 +12,13 @@ import numpy as np
 import pyvista as pv
 from time import sleep
 
+
 # Obstacle class: a polytope defined by its vertices (in its own frame),
 # a position, a rotation (for orientation), and a safety distance.
 class Obstacle:
-    def __init__(self, vertices_local, position, rotation=np.eye(3), safety_distance=0.01):
+    def __init__(
+        self, vertices_local, position, rotation=np.eye(3), safety_distance=0.01
+    ):
         self.vertices_local = vertices_local
         self.position = position
         self.rotation = rotation
@@ -25,6 +28,7 @@ class Obstacle:
         # Returns a 3 x num_vertices matrix in world coordinates.
         return self.rotation @ self.vertices_local + self.position[:, None]
 
+
 # Map holds a list of obstacles.
 class Map:
     def __init__(self):
@@ -33,13 +37,13 @@ class Map:
     def add_obstacle(self, obstacle):
         self.obstacles.append(obstacle)
 
+
 class Robot:
     def __init__(self, mass, inertia, actuator_matrix, raddius):
         self.mass = mass
         self.inertia = inertia
         self.actuator_matrix = actuator_matrix
         self.raddius = raddius
-    
 
 
 # Quaternion multiplication and integration routines
@@ -54,10 +58,12 @@ def quaternion_multiplication(q1, q2):
     )
     return q_ @ ca.vertcat(q2x, q2y, q2z, q2w)
 
+
 def quaternion_integration(q, w, dt):
     w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
     q_ = ca.vertcat(w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2))
     return quaternion_multiplication(q_, q)
+
 
 # Setup
 N = 40
@@ -83,35 +89,44 @@ J = opti.parameter(3, 3)
 A = opti.parameter(6, 6)
 m = opti.parameter(1)
 import os
+
 executable_dir = os.path.dirname(os.path.abspath(__file__))
 J_ = np.load(os.path.join(executable_dir, "J_matrix.npy"))
 A_ = np.load(os.path.join(executable_dir, "A_matrix.npy"))
 m_ = np.load(os.path.join(executable_dir, "mass.npy"))
 
 
-opti.set_value(J,J_)
-opti.set_value(A,A_)
-opti.set_value(m,m_)
+opti.set_value(J, J_)
+opti.set_value(A, A_)
+opti.set_value(m, m_)
 
 # Define obstacles in the environment (polytopic obstacles)
 map_env = Map()
-vertices_obstacle = np.array([
-    [0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0],
-    [0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0],
-    [0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0]
-])
+vertices_obstacle = np.array(
+    [
+        [0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0],
+        [0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0],
+        [0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+    ]
+)
 position_obstacle = np.array([2.0, 0, 0])
 rotation_obstacle = np.eye(3)
 safety_dist_obstacle = 0.05
-obstacle1 = Obstacle(vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle)
+obstacle1 = Obstacle(
+    vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle
+)
 map_env.add_obstacle(obstacle1)
 
 position_obstacle = np.array([0.0, 2.3, 0.0]) + position_obstacle
-obstacle2 = Obstacle(vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle)
+obstacle2 = Obstacle(
+    vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle
+)
 map_env.add_obstacle(obstacle2)
 
 position_obstacle = np.array([-2.0, 0.0, 0.0]) + position_obstacle
-obstacle3 = Obstacle(vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle)
+obstacle3 = Obstacle(
+    vertices_obstacle, position_obstacle, rotation_obstacle, safety_dist_obstacle
+)
 map_env.add_obstacle(obstacle3)
 
 
@@ -122,17 +137,26 @@ opti.subject_to(x[:, 0] == x0)
 pos, vel, quat, ang_vel = x[:3, :], x[3:6, :], x[6:10, :], x[10:, :]
 
 # Dynamics constraints
-for i in range(N-1):
+for i in range(N - 1):
     F = ca.mtimes(A[:3, :], u[:, i])
     M = ca.mtimes(A[3:, :], u[:, i])
     R_current = sc.Rotation.from_quat(quat[:, i])
     # Update position and velocity using the rotated force
-    opti.subject_to(pos[:, i+1] == pos[:, i] + dt * vel[:, i])
-    opti.subject_to(vel[:, i+1] == vel[:, i] + dt * (1/m) * ca.mtimes(R_current.as_matrix(), F))
+    opti.subject_to(pos[:, i + 1] == pos[:, i] + dt * vel[:, i])
+    opti.subject_to(
+        vel[:, i + 1] == vel[:, i] + dt * (1 / m) * ca.mtimes(R_current.as_matrix(), F)
+    )
     # Quaternion update
-    opti.subject_to(quat[:, i+1] == quaternion_integration(quat[:, i], ang_vel[:, i], dt))
+    opti.subject_to(
+        quat[:, i + 1] == quaternion_integration(quat[:, i], ang_vel[:, i], dt)
+    )
     # Angular velocity update (using the standard rigid-body dynamics)
-    opti.subject_to(ang_vel[:, i+1] == ang_vel[:, i] + dt * ca.mtimes(ca.inv(J), M - ca.cross(ang_vel[:, i], ca.mtimes(J, ang_vel[:, i]))))
+    opti.subject_to(
+        ang_vel[:, i + 1]
+        == ang_vel[:, i]
+        + dt
+        * ca.mtimes(ca.inv(J), M - ca.cross(ang_vel[:, i], ca.mtimes(J, ang_vel[:, i])))
+    )
 
 # Control bounds (for each time step)
 for i in range(N):
@@ -161,7 +185,7 @@ for obs in map_env.obstacles:
     for i in range(N):
         # Following the suggestion in the paper for V-Sqrt/V-GI constraints,
         # initialize ξ away from zero (e.g. along the first coordinate)
-        opti.set_initial(xi[:, i], np.array([2*delta_min, 0, 0]))
+        opti.set_initial(xi[:, i], np.array([2 * delta_min, 0, 0]))
         opti.set_initial(mu_r[0, i], 0)
         opti.set_initial(nu[0, i], 0.1)
 
@@ -173,13 +197,20 @@ for obs in map_env.obstacles:
         P_R_inv = R_current @ ca.DM(np.linalg.inv(P_R_base)) @ R_current.T
 
         # Dual constraint corresponding to -1/4 ||ξ||² - ξᵀ c_R - μ_r - ν ≥ Δ_min².
-        opti.subject_to(- (1/4) * ca.dot(xi[:, i], xi[:, i]) - ca.dot(xi[:, i], c_R) - mu_r[0, i] - nu[0, i] - delta_min**2 >= 0)
+        opti.subject_to(
+            -(1 / 4) * ca.dot(xi[:, i], xi[:, i])
+            - ca.dot(xi[:, i], c_R)
+            - mu_r[0, i]
+            - nu[0, i]
+            - delta_min**2
+            >= 0
+        )
         # Constraint from the vertex representation of the polytope obstacle:
         opti.subject_to(V_O.T @ xi[:, i] + mu_r[0, i] >= 0)
         # Enforce the norm condition: ||ξ||² ≥ 4 Δ_min².
         opti.subject_to(ca.dot(xi[:, i], xi[:, i]) >= 4 * delta_min**2)
         # Dual constraint linking ν and the ellipsoid shape:
-        opti.subject_to(nu[0, i]**2 >= ca.dot(xi[:, i], ca.mtimes(P_R_inv, xi[:, i])))
+        opti.subject_to(nu[0, i] ** 2 >= ca.dot(xi[:, i], ca.mtimes(P_R_inv, xi[:, i])))
         opti.subject_to(nu[0, i] >= 0)
 
 # --- Cost Function ---
@@ -191,23 +222,26 @@ for i in range(N):
     cost += ca.mtimes((p - p_f).T, (p - p_f)) * 10
 opti.minimize(cost)
 
-# initial position 
+# initial position
 p_i = np.array([0, 0, 0])
 p_f = np.array([8, 3, 0])
 # interpolation of N points in straight line between p_i and p_f
 p = np.linspace(p_i, p_f, N)
-#opti.set_initial(x[:3, :], p.T)
-
+# opti.set_initial(x[:3, :], p.T)
 
 
 # Set up and solve with IPOPT
-opti.solver("ipopt",  {}, {
-    #"constr_viol_tol": 1e-3,
-    #"acceptable_tol": 1e-2,
-    "linear_solver": "ma27",
-    "nlp_scaling_method": "none",
-    "mu_strategy": "adaptive",
-})
+opti.solver(
+    "ipopt",
+    {},
+    {
+        # "constr_viol_tol": 1e-3,
+        # "acceptable_tol": 1e-2,
+        "linear_solver": "ma27",
+        "nlp_scaling_method": "none",
+        "mu_strategy": "adaptive",
+    },
+)
 sol = opti.solve()
 
 # --- Visualization ---
@@ -216,9 +250,12 @@ plotter = pv.Plotter()
 for obs in map_env.obstacles:
     vertices = obs.global_vertices().T
     bounds = [
-        vertices[:, 0].min(), vertices[:, 0].max(),
-        vertices[:, 1].min(), vertices[:, 1].max(),
-        vertices[:, 2].min(), vertices[:, 2].max()
+        vertices[:, 0].min(),
+        vertices[:, 0].max(),
+        vertices[:, 1].min(),
+        vertices[:, 1].max(),
+        vertices[:, 2].min(),
+        vertices[:, 2].max(),
     ]
     cube = pv.Box(bounds=bounds)
     plotter.add_mesh(cube, color="salmon", opacity=1.0)
@@ -231,13 +268,13 @@ R_list = [trf.Rotation.from_quat(sol.value(x[6:10, i])) for i in range(N)]
 
 # Compute ellipsoid radii from the shape matrix (SVD of P_R_base)
 U, s, _ = np.linalg.svd(P_R_base)
-radii = 1. / np.sqrt(s)
+radii = 1.0 / np.sqrt(s)
 radii = np.array([0.24, 0.24, 0.10])
 for i in range(N):
     center = np.array([x_val[i], y_val[i], z_val[i]])
     R_i = R_list[i]
     ellipsoid = pv.ParametricEllipsoid(*radii)
-    transform = np.eye(4)   
+    transform = np.eye(4)
     transform[:3, :3] = R_i.as_matrix()
     transform[:3, 3] = center
     ellipsoid.transform(transform)
@@ -252,7 +289,7 @@ print("Final pos:", sol.value(x[:3, -1]))
 print("Desired pos:", sol.value(xf[:3]))
 print("Box 1 vertices:", obstacle1.global_vertices())
 print("Box 2 vertices:", obstacle2.global_vertices())
-print ("Dt : ", sol.value(dt))
+print("Dt : ", sol.value(dt))
 
 plotter.show()
 
