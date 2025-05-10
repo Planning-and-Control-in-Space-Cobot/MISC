@@ -4,6 +4,7 @@ from scipy.spatial.transform import Rotation as R
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 
+
 # === Estado SE(3) ===
 @dataclass
 class State:
@@ -15,18 +16,22 @@ class State:
     def as_array(self):
         return np.concatenate([self.x, self.v, self.q, self.w])
 
-    def distance_to(self, other: 'State'):
+    def distance_to(self, other: "State"):
         pos_dist = np.linalg.norm(self.x - other.x)
         quat_dist = 1 - abs(np.dot(self.q, other.q))
         return pos_dist + quat_dist
+
 
 class Node:
     def __init__(self, state: State, parent=None):
         self.state = state
         self.parent = parent
 
+
 # === Simula sequência de controles reais fora do CasADi (para checagem final) ===
-def simulate_dynamics(state: State, A: np.ndarray, u_seq: list, m: float, J: np.ndarray, dt: float) -> State:
+def simulate_dynamics(
+    state: State, A: np.ndarray, u_seq: list, m: float, J: np.ndarray, dt: float
+) -> State:
     x, v, q, w = state.x.copy(), state.v.copy(), state.q.copy(), state.w.copy()
 
     for u in u_seq:
@@ -41,12 +46,15 @@ def simulate_dynamics(state: State, A: np.ndarray, u_seq: list, m: float, J: np.
         # Atualiza orientação
         def Q(q):
             qx, qy, qz, qw = q
-            return np.array([
-                [ qw, -qz,  qy],
-                [ qz,  qw, -qx],
-                [-qy,  qx,  qw],
-                [-qx, -qy, -qz],
-            ])
+            return np.array(
+                [
+                    [qw, -qz, qy],
+                    [qz, qw, -qx],
+                    [-qy, qx, qw],
+                    [-qx, -qy, -qz],
+                ]
+            )
+
         dq = 0.5 * Q(q) @ w
         q += dq * dt
         q /= np.linalg.norm(q)
@@ -57,9 +65,12 @@ def simulate_dynamics(state: State, A: np.ndarray, u_seq: list, m: float, J: np.
 
     return State(x, v, q, w)
 
+
 # === Planejador Lazy RRT com otimização CasADi ===
 class LazyRRT_Casadi:
-    def __init__(self, x_init, x_goal, A, J, m, max_iters=300, N=10, dt=0.1, goal_tolerance=1.0):
+    def __init__(
+        self, x_init, x_goal, A, J, m, max_iters=300, N=10, dt=0.1, goal_tolerance=1.0
+    ):
         self.x_init = x_init
         self.x_goal = x_goal
         self.A = A
@@ -91,9 +102,9 @@ class LazyRRT_Casadi:
         def Q(q):
             qx, qy, qz, qw = q[0], q[1], q[2], q[3]
             return ca.vertcat(
-                ca.horzcat( qw, -qz,  qy),
-                ca.horzcat( qz,  qw, -qx),
-                ca.horzcat(-qy,  qx,  qw),
+                ca.horzcat(qw, -qz, qy),
+                ca.horzcat(qz, qw, -qx),
+                ca.horzcat(-qy, qx, qw),
                 ca.horzcat(-qx, -qy, -qz),
             )
 
@@ -124,7 +135,9 @@ class LazyRRT_Casadi:
             sol = opti.solve()
             U_opt = sol.value(U)
             u_seq = [U_opt[:, i] for i in range(self.N)]
-            new_state = simulate_dynamics(from_state, self.A, u_seq, self.m, self.J, self.dt)
+            new_state = simulate_dynamics(
+                from_state, self.A, u_seq, self.m, self.J, self.dt
+            )
             if new_state.distance_to(to_state) < self.goal_tolerance:
                 return new_state
         except:
@@ -150,14 +163,19 @@ class LazyRRT_Casadi:
             node = node.parent
         return path[::-1]
 
+
 # === MAIN EXECUÇÃO ===
 if __name__ == "__main__":
     J = np.load("J_matrix.npy")
     A = np.load("A_matrix.npy")
     m = np.load("mass.npy").item()
 
-    x_init = State(x=np.array([0, 0, 0]), v=np.zeros(3), q=np.array([0, 0, 0, 1]), w=np.zeros(3))
-    x_goal = State(x=np.array([2, 2, 2]), v=np.zeros(3), q=np.array([0, 0, 0, 1]), w=np.zeros(3))
+    x_init = State(
+        x=np.array([0, 0, 0]), v=np.zeros(3), q=np.array([0, 0, 0, 1]), w=np.zeros(3)
+    )
+    x_goal = State(
+        x=np.array([2, 2, 2]), v=np.zeros(3), q=np.array([0, 0, 0, 1]), w=np.zeros(3)
+    )
 
     planner = LazyRRT_Casadi(x_init, x_goal, A, J, m)
     path = planner.plan()
@@ -168,8 +186,8 @@ if __name__ == "__main__":
         ys = [s.x[1] for s in path]
         zs = [s.x[2] for s in path]
         fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.plot(xs, ys, zs, 'o-', label="Planned Path")
+        ax = fig.add_subplot(111, projection="3d")
+        ax.plot(xs, ys, zs, "o-", label="Planned Path")
         ax.set_title("Lazy RRT with Dynamics (SE(3))")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")

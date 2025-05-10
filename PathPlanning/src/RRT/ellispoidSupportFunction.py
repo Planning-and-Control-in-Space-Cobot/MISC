@@ -29,9 +29,9 @@ def main():
     ellipsoid_geom = fcl.Ellipsoid(a, b, c)
     center = np.array([3.0, 3.0, 3.0])
     euler_deg = [22, 90, 0]
-    rotation = R.from_euler('xyz', np.radians(euler_deg))
-    quat = rotation.as_quat()         # FCL
-    rot_matrix = rotation.as_matrix() # Support function
+    rotation = R.from_euler("xyz", np.radians(euler_deg))
+    quat = rotation.as_quat()  # FCL
+    rot_matrix = rotation.as_matrix()  # Support function
     ellipsoid_transform = fcl.Transform(quat, center)
     ellipsoid_obj = fcl.CollisionObject(ellipsoid_geom, ellipsoid_transform)
 
@@ -60,9 +60,11 @@ def main():
         signed_dist = ellipsoid_signed_distance(
             center=center,
             rot_matrix=rot_matrix,
-            a=a, b=b, c=c,
+            a=a,
+            b=b,
+            c=c,
             normal=direction_normal,
-            closest_point=closest_box
+            closest_point=closest_box,
         )
 
         print("\n=== Support Function-Based Distance ===")
@@ -74,8 +76,12 @@ def main():
         plotter.set_background("white")
 
         # Box (plane)
-        box_mesh = pv.Cube(center=box_position, x_length=box_thickness,
-                           y_length=box_width, z_length=box_height)
+        box_mesh = pv.Cube(
+            center=box_position,
+            x_length=box_thickness,
+            y_length=box_width,
+            z_length=box_height,
+        )
         plotter.add_mesh(box_mesh, color="gray", opacity=0.5, label="Plane")
 
         # Ellipsoid mesh (correct rotation and translation)
