@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: PathPlanner
+Version: 0.1.0
+Summary: All work necessary for a real time path planner considering the Total volume of the robot, as well as the the attitude in a non convex environment
+Author-email: andre-rebelo-teixera <andre.rebelo.teixeira@hotmail.com>
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: casadi<3.7,>=3.5.5
+Requires-Dist: numpy>2.0
+Requires-Dist: pyvista>=0.45.0
+Requires-Dist: scipy>=1.15.2
+Requires-Dist: spatial-casadi>=1.1.0
+Requires-Dist: trimesh>=4.6.8
+Requires-Dist: open3d>=0.19.0
+Requires-Dist: python-fcl==0.7.0.8
+Requires-Dist: trame==3.8.2
+Requires-Dist: trame-client==3.7.1
+Requires-Dist: trame-server==3.4.0
+Requires-Dist: trame-vtk==2.8.15
+Requires-Dist: trame-vuetify==3.0.1
+Dynamic: license-file

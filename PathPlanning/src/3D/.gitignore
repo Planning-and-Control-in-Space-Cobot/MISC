@@ -1,0 +1,5 @@
+*.npy
+
+!A_matrix.npy
+!J_matrix.npy
+!mass.npy
