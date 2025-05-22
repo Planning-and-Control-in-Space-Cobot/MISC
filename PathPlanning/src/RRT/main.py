@@ -1,10 +1,14 @@
 import os
+import open3d as o3d
 import sys
 import numpy as np
 import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
 import pickle
+import trimesh as tm
+
+from typing import List, Tuple
 
 # Add the executable directory to the system path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,11 +17,39 @@ sys.path.append(script_dir)
 from RRT import RRTPlanner3D as RRTPlanner, RRTState
 
 from Environment import EnvironmentHandler as RRTEnv
-from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationState
+from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationState, TimeStepObstacleConstraints
+from MeshSampler import MeshSampler
 
 from time import sleep
+def createEllipsoid(a : float, b : float, c : float, subdivisions :int = 3) -> tm.Trimesh:
+    '''
+    This function creates an ellipsoidal mesh composed of triangle that is encapsulated in a Trimesh object.
+
+    The ellipsoid is considered to be centered at the origin and aligned with the axis, if needed it can be rotated
+
+    Parameters:
+        a (float): The radius of the ellipsoid along the x-axis.
+        b (float): The radius of the ellipsoid along the y-axis.
+        c (float): The radius of the ellipsoid along the z-axis.
+        subdivisions (int): The number of subdivisions for the mesh. Default is 10.
+
+    Return:
+        tm.Trimesh: A Trimesh object representing the ellipsoid.
+    '''
+    # Create an icosphere mesh 
+    mesh = tm.creation.icosphere(subdivisions=subdivisions, radius=1.0)
+    # Scale the vertices to form an ellipsoid 
+    vertices = mesh.vertices @ np.diag([a, b, c])
+    # Create new mesh with the scaled vertices
+    return tm.Trimesh(vertices=vertices, faces=mesh.faces)
+
 
 def main():
+    robotEllipsoid = createEllipsoid(0.24, 0.24, 0.1, 3)
+
+    meshSampler = MeshSampler(robotEllipsoid)
+    translations = meshSampler.sample_uniform(50) # This is the translation from the center of the robot to the surface point since ellipsoid is centered at origin and axis aligned
+
     args = sys.argv[1:] # all but the first argument
     
     use_saved_path = len(args) == 0 or (len(args) == 1 and args[0] != "new")
@@ -51,7 +83,7 @@ def main():
     m = np.load(os.path.join(os.path.dirname(__file__), "mass.npy"))
     fcl_obj = rrtEnv.buildEllipsoid()
 
-    robot = Robot(J, A, m, fcl_obj)
+    robot = Robot(J, A, m, fcl_obj, translations)
     stateLowerBound = np.array([-25, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
     
@@ -65,35 +97,37 @@ def main():
     xf[0:3] = path[-1].x
     xf[6:10] = path[-1].q
 
-    def getObstacles(path):
-        obstacles = []
-        for i, p in enumerate(path):
-            x = p.x
-            q = p.q
-            R = trf.Rotation.from_quat(q)
-            if rrtEnv.numCollisions(fcl_obj, x, q) > 0:
-                return None 
 
-            _, p_obj, p_env = rrtEnv.getClosestPoints(robot.fcl_obj, x, q)
-            translation = p_obj - x
-            translation = R.as_matrix().T @ translation
-            obstacle = Obstacle(p_obj, p_env, translation, i) 
-            obstacles.append(obstacle)
+    def getObstacles(path : List[OptimizationState], surfacePoints : np.ndarray, rrtEnv : RRTEnv): 
+        point =  rrtEnv.buildSinglePoint()
+        obstacleSets = []
+        for i, p in enumerate(path[1:-1]):
+            obstacleTimeStep = []
+            for j, translation in enumerate(surfacePoints):
+                x = p.x + translation # Sum the translation to the robot position
+                q = p.q
+                R = trf.Rotation.from_quat(q)
+                d, _, p2 = rrtEnv.getClosestPoints(point, x, q)
+                normal = x - p2
+
+                obstacleTimeStep.append(Obstacle(j, normal, x, p2))
+            obstacleSets.append(TimeStepObstacleConstraints(i+1, surfacePoints.shape[1], obstacleTimeStep))
+        return obstacleSets        
         
-        return obstacles
-    obstacles = getObstacles(path)
+    originalPath = path
+    obstacles = getObstacles(path, translations, rrtEnv)
     rrtOpt.setup_optimization(path, obstacles, xi, xf) 
-    dt = 1
+    dt = 0.5
     prev_u = np.zeros((6, len(path)))
     for i in range (1):
         print(f"Iteration {i}")
-        obstacles = getObstacles(path)
+        obstacles = getObstacles(path, translations, rrtEnv)
         if obstacles is None:
            exit(1) 
         sol = rrtOpt.optimize(path, obstacles, dt, prev_u)        
-        path, prev_u, u  = rrtOpt.getSolution(sol)
+        path, prev_u, dt  = rrtOpt.getSolution(sol)
 
-    plt = rrtOpt.visualize_trajectory(path, path, rrtEnv.voxel_mesh)
+    plt = rrtOpt.visualize_trajectory(originalPath, path, rrtEnv.voxel_mesh)
     def format_vec(v, width=6, prec=3):
         return "[" + " ".join(f"{x:{width}.{prec}f}" for x in v) + "]"
     def compute_plane_distance(collision_point, prevEnvPoint, normal):
@@ -101,50 +135,12 @@ def main():
         denom = np.linalg.norm(normal)
         return num / denom if denom > 1e-12 else 0.0  # avoid div by 0
 
-
-    for i, p in enumerate(path):
-        x = p.x
-        q = p.q 
-        R = trf.Rotation.from_quat(q)
-        p_x = path[i].x
-        num_cols = rrtEnv.numCollisions(fcl_obj, x, q)
-        if num_cols != 0:
-            collision_point = rrtEnv.getCollisionPoints(fcl_obj, x, q)
-            normal = obstacles[i].normal
-            prevEnvPoint = obstacles[i].closestPointObstacle
-            prevRobotPoint = obstacles[i].closestPointRobot
-            distancePrevRobotPointToCollisionPoint = np.linalg.norm(collision_point - prevRobotPoint)
-            prevRobotPointPosition = obstacles[i].closestPointRobot + R.apply(obstacles[i].translation)
-
-            start_pos = p_x
-            end_pos = x 
-            distance_ = np.linalg.norm(start_pos - end_pos)
-
-            lhs = np.dot(normal, x + R.apply(obstacles[i].translation))
-            rhs = np.dot(normal, prevEnvPoint) + obstacles[i].safetyMargin
-            print(f"i {i} lhs: {lhs:.2f} rhs: {rhs:.2f} diff: {lhs - rhs:.2f}")
-
-            #print(
-            #    f"num collisions: {i:<2}  {num_cols} " 
-            #    f"normal = {format_vec(normal)} "
-            #    f"collision Point = {format_vec(collision_point)} -{distancePrevRobotPointToCollisionPoint} { prevRobotPointPosition} "
-            #    f"prevEnvPoint = {format_vec(prevEnvPoint)} "
-            #    f"obsacleMinDistance = {obstacles[i].minDistance:.2f} "
-            #    f"mov_distance = {distance_:.6f} "
-            #)
-
-            plane = pv.Plane(prevEnvPoint, normal)
-            plt.add_mesh(plane, color="yellow")
-
+    print(f"dt = {dt}")
     np.set_printoptions(
         linewidth=200,           # Increase max characters per line
         suppress=True,           # Suppress scientific notation
         precision=3,            # Set precision for floats
     )
-    #print(optimized_path[1])
-    #print(optimized_path[2])
-    #print(f"xi - {xi} -{optimized_path[0][0].x } {optimized_path[0][0].q}")
-    #print(f"xf - {xf} -{optimized_path[0][-1].x} {optimized_path[0][-1].q}")
     plt.show()
 
 

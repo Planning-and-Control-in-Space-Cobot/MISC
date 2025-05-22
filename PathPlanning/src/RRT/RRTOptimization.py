@@ -21,7 +21,7 @@ import pyvista as pv
 
 class Robot:
     def __init__(
-        self, J: np.ndarray, A: np.ndarray, m: float, fcl_obj : fcl.CollisionGeometry 
+        self, J: np.ndarray, A: np.ndarray, m: float, fcl_obj : fcl.CollisionGeometry, surfacePoints : np.ndarray 
     ):
         """
         Robot class to represent the robot in the optimization problem
@@ -29,11 +29,11 @@ class Robot:
         Parameters
             J (np.ndarray): inertia matrix of the robot
             A (np.ndarray): actuation matrix of the robot
-            m (float): mass of the robot
-            ellipsoid_radius (np.ndarray): radius of the ellipsoid that
-                represents the robot
-
-        Returns
+            m (float): mass of the robot represents the robot
+            fcl_obj (fcl.CollisionGeometry): fcl object of the robot
+            surfacePoints (np.ndarray): A 3xN matrix that represents the translation from the center of the robot to the multiple surface points that will be used to represent the robot in the obstacle avoidance constraints of the optimization problem. NOTE: This translations are represent in the robot frame, so when used in the optimization problem they need to be rotated according to the robot orientation, otherwise they will not be correct.
+       
+         Returns
             None
         """
         if (
@@ -49,8 +49,16 @@ class Robot:
         self.A = A
         self.m = m
         self.fcl_obj = fcl_obj
+        self.surfacePoints = surfacePoints
 
+    def getNumSurfacePoints(self):
+        '''
+        Returns the number of surface points used to represent the robot in the optimization problem
     
+        Returns
+            int: number of surface points
+        '''
+        return self.surfacePoints.shape[0]
 
     def f(self, state, u, dt):
         def unflat(state, u):
@@ -93,30 +101,57 @@ class Robot:
 class Obstacle:
     def __init__(
         self,
-        closestPointRobot : np.ndarray, 
-        closestPointObstacle : np.ndarray, 
-        translation : np.ndarray, 
-        iteration : int,
-        safetyMargin : float = 1e-1):
+        robotSurfacePointIndex : int, 
+        normal : np.ndarray,
+        robotSurfacePoint : np.ndarray,
+        closestPointObstacle: np.ndarray, 
+        safetyMargin: float = 1e-1
+    ):
         '''
-            This class represents an obstacle in the optimization problem
+        This class represents an obstacle in the optimization problem
 
-            Parameters
-                closestPointRobot (np.ndarray): closest point on the robot
-                closestPointObstacle (np.ndarray): closest point on the obstacle
-                translation (np.ndarray): translation from the center of the robot to the closest point in the robot
-                iteration (int) :  the iteration in the optimization problem that this obstacle plane should be considered
-                safetyMargin (float): safety margin for the obstacle
+        Parameters:
+            robotSurfacePointIndex (int): Index to know the surface point of the robot that is being considered for this obstacle
+            normal (np.ndarray) : Normal of the obstacle plane
+            robotSurfacePoint (np.ndarray): The surface point of the robot that is b
+            closestPointObstacle (np.ndarray): Closest point on the obstacle
+            safetyMargin (float): Safety margin for the obstacle
         '''
-
-        self.closestPointRobot = closestPointRobot
+        self.robotSurfacePointIndex = robotSurfacePointIndex
+        self.normal = normal
+        self.robotSurfacePoint = robotSurfacePoint
         self.closestPointObstacle = closestPointObstacle
-        self.translation = translation
-        self.iteration = iteration
-        self.normal = (self.closestPointRobot - self.closestPointObstacle) / np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
-        self.minDistance = np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
         self.safetyMargin = safetyMargin
+        self.distance = np.linalg.norm(self.closestPointObstacle - self.robotSurfacePoint)
+
+class TimeStepObstacleConstraints:
+    def __init__(self, 
+                 n : int, 
+                 numSurfacePoints : int, 
+                 obstacles : List[Obstacle], 
+                ):
+        '''
+        This class represent all the obstacles in a single time step of the optimization problem. We will have 1 obstacle per surface point being considered in the optimization problem.
+
+        Parameters:
+            n (int): The time step in the optimization problem
+            numSurfacePoints (int): The number of surface points being considered in the optimization problem
+            Obstacles (List[Obstacle]): List of obstacles in this time step
+        '''
+        self.n = n
+        self.numSurfacePoints = numSurfacePoints
+        self.obstacles = obstacles
+        self.minObstacleDistance = min([obstacle.distance for obstacle in self.obstacles])
+    
+    def getMinDistance(self) -> float:
+        '''
+        Returns the minimum distance to the obstacles in this time step
         
+        Returns
+            float: minimum distance to the obstacles
+        '''
+        return self.minObstacleDistance
+
 class OptimizationState:
     """
     A class to represent the each state / step in the optimization, this class
@@ -147,7 +182,6 @@ class OptimizationState:
             np.ndarray: flatten state - (13,)
         """
         return np.hstack([self.x, self.v, self.q, self.w])
-
 class RRTPathOptimization:
     def __init__(
         self,
@@ -163,7 +197,7 @@ class RRTPathOptimization:
     def setup_optimization(
         self,
         initial_path: List[OptimizationState],
-        obstacles: List[Obstacle],
+        obstacles: List[TimeStepObstacleConstraints],
         xi: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
         xf: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
     ):
@@ -183,24 +217,23 @@ class RRTPathOptimization:
         """
         self.opti = ca.Opti()
 
-        self.num_obstacles = len(obstacles)
         self.N = len(initial_path)
-
-        if self.N != self.num_obstacles:
-            raise ValueError("We need to consider one obstacle per step in the horizon")
+        # Check if we have N - 2 sets of obstacle avoidance constraints
+        # N - 2 since we dont want to move the first and the last state, and so obstacle avoidance is not necessary
+        if self.N != len(obstacles) + 2:
+            raise ValueError( 
+            "There should be N - 2 sets of obstacle avoidance constraints, where N is the number of states in the optimization problem, we should not move the first and last state.")
 
         # Define the optimization variables
         self.x = self.opti.variable(13, self.N)  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
         self.u = self.opti.variable(6, self.N)
 
         # The start position of the robot in each of the steps
-        self.startPos = self.opti.parameter(3, self.N)
-
-        # The distance to the obstacle in each of the steps
-        self.obstacleDistance = self.opti.parameter(1, self.N)
+        self.startPos = self.opti.parameter(3, self.N) # Used to compute the trust region constraint of the optimization problem
 
         self.dt = self.opti.variable(1)
         self.opti.subject_to(self.dt > 0)
+        self.opti.subject_to(self.dt < 0.2)
 
         # Optimization parameters
         self.xf = self.opti.parameter(13)
@@ -216,49 +249,38 @@ class RRTPathOptimization:
                 self.x[:, i + 1] == self.robot.f(self.x[:, i], self.u[:, i], self.dt)
             )
 
-        self.closestPointObstacle = self.opti.parameter(3, self.num_obstacles)
-        self.translation = self.opti.parameter(3, self.num_obstacles)
-        self.normal = self.opti.parameter(3, self.num_obstacles)
+        self.numSurfacePoints = self.robot.getNumSurfacePoints()
 
-        self.distance = self.opti.parameter(1, self.num_obstacles)
+        self.normal = self.opti.parameter(3, self.numSurfacePoints * (self.N - 2))
+        self.closestPointObstacle = self.opti.parameter(3, self.numSurfacePoints * (self.N - 2))
+        self.translation = self.opti.parameter(3, self.numSurfacePoints * (self.N - 2))
+        self.minDistance = self.opti.parameter(1, self.N - 2)
+        self.nObstacles = self.numSurfacePoints * (self.N  - 2)
 
-        for i in range(1, self.num_obstacles - 1):
-            iter = obstacles[i].iteration
-            # Stop point from colliding with obstacle :
-            # n(X_{cent} + R T)) >= safetyMargin + d 
+        for n, obstacleSet in enumerate(obstacles):
+            for i, obstacle in enumerate(obstacleSet.obstacles):
+                # Get the index of the obstacle in the optimization problem 
+                iter = n * self.numSurfacePoints + i
+                normal = self.normal[:, iter]
+                closestPointObstacle = self.closestPointObstacle[:, iter]
+                translation = self.translation[:, iter]
+                R = sc.Rotation.from_quat(self.x[6:10, n+1])
 
-   #         lhs = ca.dot(self.normal[:, iter], self.x[0:3, iter] + sc.Rotation.from_quat(self.x[6:10, iter]).as_matrix() @ self.translation[:, iter])
-        
-            #rhs = ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter]) + obstacles[i].safetyMargin
-            #self.opti.subject_to(lhs > rhs)
-            # Lets use only the trust region constraint and hope the solver stays inside the bounds
-            # correct by transposing one side, or use casadi.dot():
-            #lhs = self.normal[:, iter].T @ (self.x[0:3, iter] + self.translation[:, iter])
-            #rhs = self.normal[:, iter].T @ self.closestPointObstacle[:, iter] + obstacles[i].safetyMargin
-            #self.opti.subject_to(lhs <= rhs)
-            self.opti.subject_to(ca.sumsqr(self.startPos[:, iter] - self.x[0:3, iter]) <= self.distance[i]**2)
+                lhs = normal.T @ (self.x[0:3, n+1] + R.as_matrix() @ translation)
+                rhs = normal.T @ closestPointObstacle + obstacle.safetyMargin
+                self.opti.subject_to(lhs <= rhs)
+
+            self.opti.subject_to(
+                ca.sumsqr(self.startPos[:, n + 1]  - self.x[0:3, n+1]) <= self.minDistance[n] ** 2 
+            )
 
         # State and actuation constraints
         for i in range(self.N):
             #self.opti.subject_to(self.opti.bounded(-3, self.u[:, i], 3))
             self.opti.subject_to(self.opti.bounded(self.stateMinValues, self.x[:, i], self.stateMaxValues))
 
-        # Define the cost function
         cost = 0
-        cost += 10 * self.dt**2
-        for i in range(1, self.N - 1):
-            lhs = ca.dot(self.normal[:, iter], self.x[0:3, iter] + sc.Rotation.from_quat(self.x[6:10, iter]).as_matrix() @ self.translation[:, iter])
-            rhs = ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter]) + obstacles[i].safetyMargin
-            self.opti.subject_to(lhs >= rhs)
-
-            # Soft penalty: encourage distance from the plane (beyond the hard margin)
-            soft_margin = obstacles[i].safetyMargin + 0.1  # Soft margin, e.g., 10cm larger
-            dist = lhs - ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter])  # Signed distance from plane
-            epsilon = 1e-6
-
-            cost += -ca.log(lhs - rhs + epsilon)
-
-        # Penalize variation in attitude 
+        # Define the cost function
         for i in range(self.N - 1):
             cost += (1 - ca.dot(self.x[6:10, i], self.x[6:10, i + 1])**2)  
 
@@ -269,7 +291,7 @@ class RRTPathOptimization:
 
         self.opti.solver("ipopt", {}, {
             "print_level": 5,
-            "max_iter": 100,
+            "max_iter": 200,
             "warm_start_init_point": "yes",        # Use initial guess
             "mu_strategy": "adaptive",
             "hessian_approximation": "limited-memory",
@@ -291,14 +313,28 @@ class RRTPathOptimization:
     def optimize(
         self,
         initial_path: List[OptimizationState],
-        obstacles: List[Obstacle],
+        obstacles: List[TimeStepObstacleConstraints],
         dt: float = 1,
         prev_u: np.ndarray = None,
     ):
-        if self.num_obstacles != len(obstacles):
+        if self.nObstacles != len(obstacles) * self.robot.getNumSurfacePoints():
             raise ValueError(
-                "Number of obstacles has changed, please call the setup optimization function again with the correct number of obstacles"
-            )
+                "The number of obstacles in the optimization problem does not match the number os obstacles that was used during the setup of the optimization problem, will not be able to solve"
+            ) 
+
+        for n, obstacleSet in enumerate(obstacles):
+            for i, obstacle in enumerate(obstacleSet.obstacles):
+                # Get the index of the obstacle in the optimization problem
+                iter = n * self.robot.getNumSurfacePoints() + i
+                self.opti.set_value(self.normal[:, iter], obstacle.normal)
+                self.opti.set_value(self.closestPointObstacle[:, iter], obstacle.closestPointObstacle)
+                self.opti.set_value(self.translation[:, iter], obstacle.robotSurfacePoint)
+            
+            # Set the minimum distance to the obstacles
+            self.opti.set_value(self.minDistance[n], obstacleSet.getMinDistance())
+            # Set the start position of the robot in this time step
+            self.opti.set_value(self.startPos[:, n + 1], initial_path[n + 1].x)
+
         self.opti.set_initial(self.dt, dt)
 
         for i in range(self.N):
@@ -309,12 +345,6 @@ class RRTPathOptimization:
 
             self.opti.set_value(self.startPos[:, i], initial_path[i].x)
 
-
-        for i, obstacle in enumerate(obstacles):
-            self.opti.set_value(self.closestPointObstacle[:, i], obstacle.closestPointObstacle)
-            self.opti.set_value(self.translation[:, i], obstacle.translation)
-            self.opti.set_value(self.normal[:, i], obstacle.normal)
-            self.opti.set_value(self.distance[i], obstacle.minDistance)
 
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
@@ -344,7 +374,7 @@ class RRTPathOptimization:
 
     def visualize_trajectory(self, initial_path, optimized_path, voxel_mesh):
         plotter = pv.Plotter()
-        plotter.add_mesh(voxel_mesh, color="red", opacity=0.4)
+        plotter.add_mesh(voxel_mesh, color="red", opacity=1)
 
         for s in initial_path:
             mesh = pv.ParametricEllipsoid(0.24, 0.24, 0.10)
