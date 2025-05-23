@@ -17,6 +17,8 @@ from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationSt
 
 from time import sleep
 
+import matplotlib.pyplot as mplt
+
 def main():
     args = sys.argv[1:] # all but the first argument
     
@@ -67,7 +69,7 @@ def main():
 
     def getObstacles(path):
         obstacles = []
-        for i, p in enumerate(path):
+        for i, p in enumerate(path[1:-1]):
             x = p.x
             q = p.q
             R = trf.Rotation.from_quat(q)
@@ -85,6 +87,7 @@ def main():
     rrtOpt.setup_optimization(path, obstacles, xi, xf) 
     dt = 1
     prev_u = np.zeros((6, len(path)))
+    originalPath = path.copy()
     for i in range (1):
         print(f"Iteration {i}")
         obstacles = getObstacles(path)
@@ -93,7 +96,7 @@ def main():
         sol = rrtOpt.optimize(path, obstacles, dt, prev_u)        
         path, prev_u, u  = rrtOpt.getSolution(sol)
 
-    plt = rrtOpt.visualize_trajectory(path, path, rrtEnv.voxel_mesh)
+    plt = rrtOpt.visualize_trajectory(originalPath, path, rrtEnv.voxel_mesh)
     def format_vec(v, width=6, prec=3):
         return "[" + " ".join(f"{x:{width}.{prec}f}" for x in v) + "]"
     def compute_plane_distance(collision_point, prevEnvPoint, normal):
@@ -141,10 +144,95 @@ def main():
         suppress=True,           # Suppress scientific notation
         precision=3,            # Set precision for floats
     )
-    #print(optimized_path[1])
-    #print(optimized_path[2])
-    #print(f"xi - {xi} -{optimized_path[0][0].x } {optimized_path[0][0].q}")
-    #print(f"xf - {xf} -{optimized_path[0][-1].x} {optimized_path[0][-1].q}")
+
+    # Extract position components
+    x_ = [p.x[0] for p in path]
+    x__ = [p.x[0] for p in originalPath]
+
+    y_ = [p.x[1] for p in path]
+    y__ = [p.x[1] for p in originalPath]
+
+    z_ = [p.x[2] for p in path]
+    z__ = [p.x[2] for p in originalPath]
+
+    # Extract quaternion components
+    qx_ = [p.q[0] for p in path]
+    qx__ = [p.q[0] for p in originalPath]
+
+    qy_ = [p.q[1] for p in path]
+    qy__ = [p.q[1] for p in originalPath]
+
+    qz_ = [p.q[2] for p in path]
+    qz__ = [p.q[2] for p in originalPath]
+
+    qw_ = [p.q[3] for p in path]
+    qw__ = [p.q[3] for p in originalPath]
+
+    # Create subplots
+    mplt.figure(figsize=(10, 14))
+
+    # X
+    mplt.subplot(7, 1, 1)
+    mplt.plot(x_, label="optimized path")
+    mplt.plot(x__, label="original path")
+    mplt.ylabel("x")
+    mplt.title("X over iterations")
+    mplt.legend()
+
+    # Y
+    mplt.subplot(7, 1, 2)
+    mplt.plot(y_, label="optimized path")
+    mplt.plot(y__, label="original path")
+    mplt.ylabel("y")
+    mplt.title("Y over iterations")
+    mplt.legend()
+
+    # Z
+    mplt.subplot(7, 1, 3)
+    mplt.plot(z_, label="optimized path")
+    mplt.plot(z__, label="original path")
+    mplt.ylabel("z")
+    mplt.title("Z over iterations")
+    mplt.legend()
+
+    # Qx
+    mplt.subplot(7, 1, 4)
+    mplt.plot(qx_, label="optimized path")
+    mplt.plot(qx__, label="original path")
+    mplt.ylabel("qx")
+    mplt.title("Qx over iterations")
+    mplt.legend()
+
+    # Qy
+    mplt.subplot(7, 1, 5)
+    mplt.plot(qy_, label="optimized path")
+    mplt.plot(qy__, label="original path")
+    mplt.ylabel("qy")
+    mplt.title("Qy over iterations")
+    mplt.legend()
+
+    # Qz
+    mplt.subplot(7, 1, 6)
+    mplt.plot(qz_, label="optimized path")
+    mplt.plot(qz__, label="original path")
+    mplt.ylabel("qz")
+    mplt.title("Qz over iterations")
+    mplt.legend()
+
+    # Qw
+    mplt.subplot(7, 1, 7)
+    mplt.plot(qw_, label="optimized path")
+    mplt.plot(qw__, label="original path")
+    mplt.xlabel("iteration")
+    mplt.ylabel("qw")
+    mplt.title("Qw over iterations")
+    mplt.legend()
+
+    # Layout
+    mplt.tight_layout()
+    mplt.show()
+
+
     plt.show()
 
 

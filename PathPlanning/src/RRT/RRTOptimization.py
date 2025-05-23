@@ -97,7 +97,7 @@ class Obstacle:
         closestPointObstacle : np.ndarray, 
         translation : np.ndarray, 
         iteration : int,
-        safetyMargin : float = 1e-1):
+        safetyMargin : float = 0.01):
         '''
             This class represents an obstacle in the optimization problem
 
@@ -116,6 +116,41 @@ class Obstacle:
         self.normal = (self.closestPointRobot - self.closestPointObstacle) / np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
         self.minDistance = np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
         self.safetyMargin = safetyMargin
+    
+    def generateSquare(self):
+        """
+        Generate 4 vertices of a square in 3D space lying in a plane.
+
+        Parameters:
+        - p0 (array-like): 3D point on the plane (shape: (3,))
+        - n (array-like): 3D normal vector of the plane (shape: (3,))
+        - d (float): Half side length of the square (i.e., square is 2d x 2d)
+
+        Returns:
+        - V (np.ndarray): 3x4 matrix with columns as the 4 square vertices in 3D
+        """
+        # Pick a helper vector that is not parallel to n
+        helper = np.array([0, 1, 0]) if not np.allclose(self.normal, [0, 1, 0]) else np.array([1, 0, 0])
+
+        # Generate two orthonormal vectors in the plane
+        u = np.cross(self.normal, helper)
+        u /= np.linalg.norm(u)
+        v = np.cross(self.normal, u)
+        v /= np.linalg.norm(v)
+
+        minDistance_ = self.minDistance
+        self.minDistance = max(self.minDistance, 2)
+
+        # Compute square vertices
+        V = np.array([
+            self.closestPointObstacle + self.minDistance*u + self.minDistance*v,
+            self.closestPointObstacle - self.minDistance*u + self.minDistance*v,
+            self.closestPointObstacle - self.minDistance*u - self.minDistance*v,
+            self.closestPointObstacle + self.minDistance*u - self.minDistance*v
+        ]).T  # shape (3, 4)
+        self.minDistance = minDistance_
+
+        return V
         
 class OptimizationState:
     """
@@ -185,9 +220,8 @@ class RRTPathOptimization:
 
         self.num_obstacles = len(obstacles)
         self.N = len(initial_path)
-
-        if self.N != self.num_obstacles:
-            raise ValueError("We need to consider one obstacle per step in the horizon")
+        if self.N != self.num_obstacles + 2:
+            raise ValueError("We need to consider one obstacle per step in the horizon except first and last, since they are the start and end states")
 
         # Define the optimization variables
         self.x = self.opti.variable(13, self.N)  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
@@ -201,6 +235,7 @@ class RRTPathOptimization:
 
         self.dt = self.opti.variable(1)
         self.opti.subject_to(self.dt > 0)
+        self.opti.subject_to(self.dt <0.2)
 
         # Optimization parameters
         self.xf = self.opti.parameter(13)
@@ -216,27 +251,36 @@ class RRTPathOptimization:
                 self.x[:, i + 1] == self.robot.f(self.x[:, i], self.u[:, i], self.dt)
             )
 
-        self.closestPointObstacle = self.opti.parameter(3, self.num_obstacles)
-        self.translation = self.opti.parameter(3, self.num_obstacles)
-        self.normal = self.opti.parameter(3, self.num_obstacles)
+        self.xi_ = self.opti.variable(3,self.N - 2)
+        self.mu_r_ = self.opti.variable(self.N - 2)
+        self.nu_ = self.opti.variable(self.N - 2)
 
         self.distance = self.opti.parameter(1, self.num_obstacles)
 
-        for i in range(1, self.num_obstacles - 1):
-            iter = obstacles[i].iteration
-            # Stop point from colliding with obstacle :
-            # n(X_{cent} + R T)) >= safetyMargin + d 
+        P_R_Base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
 
-   #         lhs = ca.dot(self.normal[:, iter], self.x[0:3, iter] + sc.Rotation.from_quat(self.x[6:10, iter]).as_matrix() @ self.translation[:, iter])
-        
-            #rhs = ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter]) + obstacles[i].safetyMargin
-            #self.opti.subject_to(lhs > rhs)
-            # Lets use only the trust region constraint and hope the solver stays inside the bounds
-            # correct by transposing one side, or use casadi.dot():
-            #lhs = self.normal[:, iter].T @ (self.x[0:3, iter] + self.translation[:, iter])
-            #rhs = self.normal[:, iter].T @ self.closestPointObstacle[:, iter] + obstacles[i].safetyMargin
-            #self.opti.subject_to(lhs <= rhs)
-            self.opti.subject_to(ca.sumsqr(self.startPos[:, iter] - self.x[0:3, iter]) <= self.distance[i]**2)
+        for i, obstacle in  enumerate(obstacles):
+
+            self.opti.set_initial(self.xi_[:, i], np.array([obstacle.safetyMargin * 2, 0, 0]))
+            self.opti.set_initial(self.mu_r_[i], 0)   
+            self.opti.set_initial(self.nu_[i], 0)
+
+            c_R = self.x[0:3, i + 1]
+            R_current = sc.Rotation.from_quat(self.x[6:10, i + 1]).as_matrix()
+            P_R_inv = R_current @ ca.DM(np.linalg.inv(P_R_Base)) @ R_current.T
+
+            V_O = obstacle.generateSquare()
+
+            self.opti.subject_to(- (1/4) * ca.dot(self.xi_[:, i], self.xi_[:, i]) - ca.dot(self.xi_[:, i], c_R) - self.mu_r_[i] - self.nu_[i] - obstacle.safetyMargin**2 >= 0)
+            # Constraint from the vertex representation of the polytope obstacle:
+            self.opti.subject_to(V_O.T @ self.xi_[:, i] + self.mu_r_[i] >= 0)
+            # Enforce the norm condition: ||ξ||² ≥ 4 Δ_min².
+            self.opti.subject_to(ca.dot(self.xi_[:, i], self.xi_[:, i]) >= 4 * obstacle.safetyMargin**2)
+            # Dual constraint linking ν and the ellipsoid shape:
+            self.opti.subject_to(self.nu_[i]**2 >= ca.dot(self.xi_[:, i], ca.mtimes(P_R_inv, self.xi_[:, i])))
+            self.opti.subject_to(self.nu_[i] >= 0)
+
+            self.opti.subject_to(ca.sumsqr(self.startPos[:, i] - self.x[0:3, i]) <= obstacle.minDistance**2)
 
         # State and actuation constraints
         for i in range(self.N):
@@ -246,18 +290,6 @@ class RRTPathOptimization:
         # Define the cost function
         cost = 0
         cost += 10 * self.dt**2
-        for i in range(1, self.N - 1):
-            lhs = ca.dot(self.normal[:, iter], self.x[0:3, iter] + sc.Rotation.from_quat(self.x[6:10, iter]).as_matrix() @ self.translation[:, iter])
-            rhs = ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter]) + obstacles[i].safetyMargin
-            self.opti.subject_to(lhs >= rhs)
-
-            # Soft penalty: encourage distance from the plane (beyond the hard margin)
-            soft_margin = obstacles[i].safetyMargin + 0.1  # Soft margin, e.g., 10cm larger
-            dist = lhs - ca.dot(self.normal[:, iter], self.closestPointObstacle[:, iter])  # Signed distance from plane
-            epsilon = 1e-6
-
-            cost += -ca.log(lhs - rhs + epsilon)
-
         # Penalize variation in attitude 
         for i in range(self.N - 1):
             cost += (1 - ca.dot(self.x[6:10, i], self.x[6:10, i + 1])**2)  
@@ -269,7 +301,7 @@ class RRTPathOptimization:
 
         self.opti.solver("ipopt", {}, {
             "print_level": 5,
-            "max_iter": 100,
+            "max_iter": 1000,
             "warm_start_init_point": "yes",        # Use initial guess
             "mu_strategy": "adaptive",
             "hessian_approximation": "limited-memory",
@@ -310,11 +342,11 @@ class RRTPathOptimization:
             self.opti.set_value(self.startPos[:, i], initial_path[i].x)
 
 
-        for i, obstacle in enumerate(obstacles):
-            self.opti.set_value(self.closestPointObstacle[:, i], obstacle.closestPointObstacle)
-            self.opti.set_value(self.translation[:, i], obstacle.translation)
-            self.opti.set_value(self.normal[:, i], obstacle.normal)
-            self.opti.set_value(self.distance[i], obstacle.minDistance)
+        #for i, obstacle in enumerate(obstacles):
+        #    self.opti.set_value(self.closestPointObstacle[:, i], obstacle.closestPointObstacle)
+        #    self.opti.set_value(self.translation[:, i], obstacle.translation)
+        #    self.opti.set_value(self.normal[:, i], obstacle.normal)
+        #    self.opti.set_value(self.distance[i], obstacle.minDistance)
 
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
