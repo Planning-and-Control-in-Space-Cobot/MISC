@@ -19,7 +19,50 @@ from RRT import RRTState
 from Environment import EnvironmentHandler
 import pyvista as pv
 
-class Robot:
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Union, TypeVar
+_T = TypeVar('_T', bound='Model')
+from typing_extensions import override
+
+
+class Model: 
+    def __init__(self, name :  str, CollisionGeometry : fcl.CollisionGeometry = None, mesh : o3d.geometry.TriangleMesh = None):
+        '''
+        Base class for a model in the optimization problem, this class will be used to represent the robot dynamics, shape and collision geometry
+
+        The init function of the model may be overloaded if necessary
+        Parameters
+            name (str): Name of the model
+            collisionGeometry (fcl.CollisionGeometry): Collision geometry of the model, this will be used to compute the collision constraints in the optimization problem
+            mesh (o3d.geometry.TriangleMesh): Mesh of the model, this will be used to visualize the model in the optimization problem
+        '''
+        self.collisionGeometry = None
+
+
+    def getCollisionGeometry(self):
+        '''
+        Function to get the collision geometry of the model, '''
+    
+
+    @abstractmethod    
+    def f(self, state, u, dt):
+        '''
+        Function to compute the next state of the Model given the current state, control inputs and time step
+
+
+        Parameters
+            state (np.ndarray): current state of the model
+            u (np.ndarray): control inputs
+            dt (float): time step
+        Returns
+            np.ndarray: next state of the model
+        '''
+        raise NotImplementedError("This method should be implemented in the subclass")    
+
+
+
+class Robot(Model):
+    @override
     def __init__(
         self, J: np.ndarray, A: np.ndarray, m: float, fcl_obj : fcl.CollisionGeometry 
     ):
@@ -51,7 +94,7 @@ class Robot:
         self.fcl_obj = fcl_obj
 
     
-
+    @override
     def f(self, state, u, dt):
         def unflat(state, u):
             x = state[0:3]
@@ -90,6 +133,7 @@ class Robot:
         w_next = w + dt * ca.inv(self.J) @ (M - ca.cross(w, self.J @ w))
         return flat(x_next, v_next, q_next, w_next)
 
+    
 class Obstacle:
     def __init__(
         self,
@@ -301,8 +345,9 @@ class RRTPathOptimization:
 
         self.opti.solver("ipopt", {}, {
             "print_level": 5,
-            "max_iter": 1000,
+            "max_iter": 100,
             "warm_start_init_point": "yes",        # Use initial guess
+            "linear_solver" : "ma97", 
             "mu_strategy": "adaptive",
             "hessian_approximation": "limited-memory",
         })
@@ -391,7 +436,7 @@ class RRTPathOptimization:
             T[:3, :3] = R.from_quat(s.q).as_matrix()
             T[:3, 3] = s.x
             mesh.transform(T)
-            plotter.add_mesh(mesh, color="blue", opacity=0.4)
+            plotter.add_mesh(mesh, color="blue : List[RRTState]", opacity=0.4)
         plotter.add_axes()
         #plotter.export_html("OptimizedTrajectory.html")
         return plotter

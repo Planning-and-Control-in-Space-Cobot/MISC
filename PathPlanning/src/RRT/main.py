@@ -12,7 +12,7 @@ sys.path.append(script_dir)
 
 from RRT import RRTPlanner3D as RRTPlanner, RRTState
 
-from Environment import EnvironmentHandler as RRTEnv
+from Environment import EnvironmentHandler 
 from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationState
 
 from time import sleep
@@ -23,23 +23,39 @@ def main():
     args = sys.argv[1:] # all but the first argument
     
     use_saved_path = len(args) == 0 or (len(args) == 1 and args[0] != "new")
+    onlyRRT = len(args) == 0 or (len(args) == 1 and args[0] == "rrt")
+    print(f"Use saved path: {use_saved_path}, Only RRT: {onlyRRT}")
     
     point_cloud_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "map.pcd")
     pcd = o3d.io.read_point_cloud(point_cloud_path)
-    rrtEnv = RRTEnv(pcd)
+    rrtEnv = EnvironmentHandler(pcd)
+
+    if onlyRRT:
+        start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
+        goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
+        robot = rrtEnv.buildEllipsoid()
+        planner = RRTPlanner(rrtEnv, robot)
+        path = planner.plan(start, goal)
+        if path == []:
+            print("No path found")
+            return
+        for s in path:
+            print(f"x: {s.x}, q: {s.q}")
+        planner.visualize_path(path)
+        exit()
     
+
     if use_saved_path:
         if not os.path.exists(os.path.join(os.path.dirname(__file__), "path.pkl")):
             raise ValueError("Path file does not exist, please run with 'new' to generate a new path")
         with open(os.path.join(os.path.dirname(__file__), "path.pkl"), "rb") as f:
             path = pickle.load(f)
     else:
-
-
         start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
         goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
-        planner = RRTPlanner(rrtEnv)
+        robot = rrtEnv.buildEllipsoid()
+        planner = RRTPlanner(rrtEnv, robot)
         path = planner.plan(start, goal)
 
         with open(os.path.join(os.path.dirname(__file__), "path.pkl"), "wb") as f:
