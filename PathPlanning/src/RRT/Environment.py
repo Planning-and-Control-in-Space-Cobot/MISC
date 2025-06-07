@@ -127,6 +127,26 @@ class EnvironmentHandler:
 
         return fcl.CollisionObject(shape, tf)
 
+    def buildBox(self, box_size : np.ndarray = np.array([0.24, 0.24, 0.24])):
+        '''
+        Creates a box to encompass an object for the collision detection.
+
+        Parameters:
+            box_size (np.ndarray): size of the box in x, y, z directions
+            
+        Returns:
+            fcl.CollisionObject: fcl collision object representing the box
+        '''
+        if not isinstance(box_size, np.ndarray):
+            raise TypeError("Box size must be a numpy array.")
+        
+        if box_size.shape != (3,):
+            raise ValueError("Box size must be a 1D array of length 3.")
+        
+        shape = fcl.Box(box_size[0], box_size[1], box_size[2])
+        tf = fcl.Transform(np.eye(3), np.array([0, 0, 0]))
+        return fcl.CollisionObject(shape, tf)
+
     def buildSinglePoint(self):
         """
         Creates a single point to encompass the robot for the collision detection.
@@ -326,3 +346,15 @@ class EnvironmentHandler:
         """
         plotter.add_mesh(self.voxel_mesh, color="white", show_edges=True)
         return plotter
+    
+    def getMesh(self):
+        """
+        Returns the voxel mesh of the environment.
+
+        Args:
+            None
+
+        Returns:
+            pv.PolyData: voxel mesh of the environment
+        """
+        return self.voxel_mesh

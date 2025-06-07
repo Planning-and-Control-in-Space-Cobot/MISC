@@ -12,39 +12,107 @@ sys.path.append(script_dir)
 
 from RRT import RRTPlanner3D as RRTPlanner, RRTState
 
-from Environment import EnvironmentHandler as RRTEnv
+from Environment import EnvironmentHandler 
 from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationState
 
 from time import sleep
 
 import matplotlib.pyplot as mplt
 
-def main():
-    args = sys.argv[1:] # all but the first argument
-    
-    use_saved_path = len(args) == 0 or (len(args) == 1 and args[0] != "new")
-    
-    point_cloud_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "map.pcd")
-    pcd = o3d.io.read_point_cloud(point_cloud_path)
-    rrtEnv = RRTEnv(pcd)
-    
-    if use_saved_path:
-        if not os.path.exists(os.path.join(os.path.dirname(__file__), "path.pkl")):
-            raise ValueError("Path file does not exist, please run with 'new' to generate a new path")
-        with open(os.path.join(os.path.dirname(__file__), "path.pkl"), "rb") as f:
-            path = pickle.load(f)
-    else:
+import argparse
 
+def createPyBox(axis):
+    """
+    Create a PyVista box mesh with the given axis.
+    """
+    box = pv.Box(bounds=(-axis[0]/2, axis[0]/2, -axis[1]/2, axis[1]/2, -axis[2]/2, axis[2]/2))
+    return box
+
+def main():
+    parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
+
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ("yes", "true", "t", "1"):
+            return True
+        elif v.lower() in ("no", "false", "f", "0"):
+            return False
+        else:
+            raise argparse.ArgumentTypeError("Boolean value expected.")
+
+    parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
+
+    parser.add_argument("--useSavedPath", "-s", type=str2bool, default=True, help="Use a saved path if it exists")
+    parser.add_argument("--onlyRRT", "-r", type=str2bool, default=False, help="Only run RRT without optimization considerations, path will be saved as 'path.pkl'")
+    parser.add_argument("--considerPayload", "-cp", type=str2bool, default=False, help="Consider payload during planning")
+    parser.add_argument("--payloadData", "-pd", type=str, default="payloadData.npz", help="Path to the payload data file")
+
+    args = parser.parse_args()
+
+    if args.useSavedPath and not os.path.exists(os.path.join(script_dir, "path.pkl")):
+        raise ValueError("Path file does not exist, so it cannot be used")
+    
+    
+    if args.onlyRRT and args.useSavedPath:
+        raise ValueError("Cannot use saved path in only RRT mode. Please run without --useSavedPath or with --onlyRRT set to false")
+
+    pcd = o3d.io.read_point_cloud(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "map.pcd"
+        )
+    )
+    environment = EnvironmentHandler(pcd)
+
+
+    if args.considerPayload:
+        if not os.path.exists(os.path.join(script_dir, args.payloadData)):
+            raise ValueError(f"Payload data file '{args.payloadData}' does not exist")
+        else:
+            with open(os.path.join(script_dir, args.payloadData), "rb") as f:
+                payload_data = np.load(f)
+                payloadSides = payload_data["payloadSides"]
+                payloadMass = payload_data["payloadMass"]
+                payloadInertia = payload_data["payloadInertia"]
+                payloadTranslation = payload_data["payloadTranslation"]
+                payloadOriginalAttitude = payload_data["payloadOriginalAttitude"]
+                payload = environment.buildBox(payloadSides)
+                payloadMesh = createPyBox(payloadSides)
+            print(f"Payload data loaded from {args.payloadData}")
+    else:
+        payload = None   
+        payloadTranslation = np.zeros(3)
+        payloadOriginalAttitude = np.array([0, 0, 0, 1])
+        payloadMesh = None
+
+    if args.onlyRRT:
+        print("Running only RRT without optimization considerations")
+        if not args.considerPayload:
+            print("Not considering the payload during RRT planning")
+            translation = np.zeros(3)
+        else:
+            print("Considering the payload during the RRT planning")
 
         start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
+        start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
         goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
-        planner = RRTPlanner(rrtEnv)
+        robot = environment.buildEllipsoid()
+        robotMesh = pv.ParametricEllipsoid(
+            0.24, 0.24, 0.10, center=(0, 0, 0)
+        )
+        planner = RRTPlanner(environment, robot, robotMesh, payload, payloadMesh, payloadTranslation, payloadOriginalAttitude)
         path = planner.plan(start, goal)
+        if not path.pathEmpty():
+            pv_ = path.visualizePath(environment, payload)                                    
+            pv_.show()
+        return
 
-        with open(os.path.join(os.path.dirname(__file__), "path.pkl"), "wb") as f:
-            pickle.dump(path, f)
 
+
+    
+
+
+    '''
     if path == []:
         return
     path = [OptimizationState(p.x, p.q) for p in path]
@@ -234,7 +302,7 @@ def main():
 
 
     plt.show()
-
+    '''
 
     
 
