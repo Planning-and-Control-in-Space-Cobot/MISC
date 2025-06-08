@@ -99,6 +99,7 @@ class RRTPath:
             pv_.add_mesh(self.environmentMesh, color="red", opacity=1)
 
         for state in self.states:
+            print(f"State {state.i}: pos={state.x}, quat={state.q}")
             robot_mesh = self.getRobotMesh(state)
             if robot_mesh is not None:
                 pv_.add_mesh(robot_mesh, color="blue", opacity=0.4)
@@ -283,6 +284,7 @@ class RRTPlanner3D:
 
         for _ in range(self.numTriesSampling):
             pos = np.random.uniform(posMin, posMax)
+            print(f"Sampling position: {pos}")
             quat = R.random().as_quat()
             state = RRTState(pos, quat)
             if self._is_valid(state, env, robot, payload, translation, considerPayload):

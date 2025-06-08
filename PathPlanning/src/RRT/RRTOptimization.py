@@ -141,7 +141,7 @@ class Obstacle:
         closestPointObstacle : np.ndarray, 
         translation : np.ndarray, 
         iteration : int,
-        safetyMargin : float = 0.01):
+        safetyMargin : float = 0.1):
         '''
             This class represents an obstacle in the optimization problem
 
@@ -193,6 +193,43 @@ class Obstacle:
             self.closestPointObstacle + self.minDistance*u - self.minDistance*v
         ]).T  # shape (3, 4)
         self.minDistance = minDistance_
+
+        return V
+
+    def generateCube(self, ):
+        """
+        Generate 8 vertices of a cube in 3D space that lies in the half-space
+        away from the obstacle (in the direction opposite to the normal).
+
+        Parameters:
+        - size (float): edge length of the cube
+
+        Returns:
+        - V (np.ndarray): 3x8 array where each column is a 3D vertex
+        """
+        size = self.minDistance + self.safetyMargin
+        # Find center of cube, offset in the direction *away* from the obstacle
+        offset = -self.normal * (size / 2.0)
+        center = self.closestPointObstacle + offset
+
+        # Create orthonormal basis (u, v, n)
+        helper = np.array([0, 1, 0]) if not np.allclose(self.normal, [0, 1, 0]) else np.array([1, 0, 0])
+        u = np.cross(self.normal, helper)
+        u /= np.linalg.norm(u)
+        v = np.cross(self.normal, u)
+        v /= np.linalg.norm(v)
+        n = self.normal
+
+        # Half size in each direction
+        hs = size / 2.0
+
+        # Build 8 corners of the cube in the local frame and transform
+        directions = [
+            +u + v + n,  -u + v + n,  -u - v + n,  +u - v + n,
+            +u + v - n,  -u + v - n,  -u - v - n,  +u - v - n,
+        ]
+
+        V = np.stack([center + hs * d for d in directions], axis=1)  # 3x8
 
         return V
         
@@ -278,8 +315,8 @@ class RRTPathOptimization:
         self.obstacleDistance = self.opti.parameter(1, self.N)
 
         self.dt = self.opti.variable(1)
+        self.opti.subject_to(self.dt < 0.5)
         self.opti.subject_to(self.dt > 0)
-        self.opti.subject_to(self.dt <0.2)
 
         # Optimization parameters
         self.xf = self.opti.parameter(13)
@@ -303,6 +340,7 @@ class RRTPathOptimization:
 
         P_R_Base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
 
+
         for i, obstacle in  enumerate(obstacles):
 
             self.opti.set_initial(self.xi_[:, i], np.array([obstacle.safetyMargin * 2, 0, 0]))
@@ -313,57 +351,65 @@ class RRTPathOptimization:
             R_current = sc.Rotation.from_quat(self.x[6:10, i + 1]).as_matrix()
             P_R_inv = R_current @ ca.DM(np.linalg.inv(P_R_Base)) @ R_current.T
 
-            V_O = obstacle.generateSquare()
+            V_O = obstacle.generateCube()
 
-            self.opti.subject_to(- (1/4) * ca.dot(self.xi_[:, i], self.xi_[:, i]) - ca.dot(self.xi_[:, i], c_R) - self.mu_r_[i] - self.nu_[i] - obstacle.safetyMargin**2 >= 0)
+            self.opti.subject_to(- (1/4) * ca.dot(self.xi_[:, i], self.xi_[:, i]) - ca.dot(self.xi_[:, i], c_R) - self.mu_r_[i] - self.nu_[i] - obstacle.safetyMargin**2 > 0 + 1e-3)
             # Constraint from the vertex representation of the polytope obstacle:
-            self.opti.subject_to(V_O.T @ self.xi_[:, i] + self.mu_r_[i] >= 0)
+            self.opti.subject_to(V_O.T @ self.xi_[:, i] + self.mu_r_[i] > 0 + 1e-3)
             # Enforce the norm condition: ||ξ||² ≥ 4 Δ_min².
-            self.opti.subject_to(ca.dot(self.xi_[:, i], self.xi_[:, i]) >= 4 * obstacle.safetyMargin**2)
+            self.opti.subject_to(ca.dot(self.xi_[:, i], self.xi_[:, i]) > 4 * obstacle.safetyMargin**2 + 1e-3)
             # Dual constraint linking ν and the ellipsoid shape:
-            self.opti.subject_to(self.nu_[i]**2 >= ca.dot(self.xi_[:, i], ca.mtimes(P_R_inv, self.xi_[:, i])))
-            self.opti.subject_to(self.nu_[i] >= 0)
+            self.opti.subject_to(self.nu_[i]**2 > ca.dot(self.xi_[:, i], ca.mtimes(P_R_inv, self.xi_[:, i])) + 1e-3)
+            self.opti.subject_to(self.nu_[i] > 0 + 1e-3)
 
             self.opti.subject_to(ca.sumsqr(self.startPos[:, i] - self.x[0:3, i]) <= obstacle.minDistance**2)
 
         # State and actuation constraints
         for i in range(self.N):
-            #self.opti.subject_to(self.opti.bounded(-3, self.u[:, i], 3))
+            self.opti.subject_to(self.opti.bounded(-3, self.u[:, i], 3))
             self.opti.subject_to(self.opti.bounded(self.stateMinValues, self.x[:, i], self.stateMaxValues))
 
         # Define the cost function
         cost = 0
-        cost += 10 * self.dt**2
+        cost += 10000 * self.dt
         # Penalize variation in attitude 
-        for i in range(self.N - 1):
-            cost += (1 - ca.dot(self.x[6:10, i], self.x[6:10, i + 1])**2)  
+        #for i in range(self.N - 1):
+        #    cost += (1 - ca.dot(self.x[6:10, i], self.x[6:10, i + 1])**2)  
 
         for i in range(self.N):
-            cost += self.u[:, i].T @ self.u[:, i]
+            cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
+
+        for i in range(1, self.N - 1):
+            cost += (self.x[0:3] - self.xf[0:3]).T @ 0.1 @ (self.x[0:3] - self.xf[0:3])
 
         self.opti.minimize(cost)
 
-        self.opti.solver("ipopt", {}, {
-            "print_level": 5,
-            "max_iter": 100,
-            "warm_start_init_point": "yes",        # Use initial guess
-            "linear_solver" : "ma97", 
-            "mu_strategy": "adaptive",
-            "hessian_approximation": "limited-memory",
-        })
-
-        #self.opti.solver(
-        #    "sqpmethod",
+        #self.opti.solver("ipopt", 
         #    {
-        #        "max_iter": 1,
-        #        # "max_inner_iter" : 1,
-        #        "qpsol_options": {
-        #            "nWSR": 10,
-        #            "error_on_fail": False,
-        #        },
+        #        "print_time": False
         #    },
-        #    {},
+        #    {
+        #        "print_level": 0,
+        #        "max_iter": 10000,
+        #        "warm_start_init_point": "yes",        # Use initial guess
+        #        "linear_solver" : "ma97", 
+        #        "mu_strategy": "adaptive",
+        #        "hessian_approximation": "limited-memory",
+        #    }
         #)
+
+        self.opti.solver(
+            "sqpmethod",
+            {
+                "max_iter": 1,
+                # "max_inner_iter" : 1,
+                "qpsol_options": {
+                    "nWSR": 1,
+                    "error_on_fail": False,
+                },
+            },
+            {},
+        )
 
     def optimize(
         self,
@@ -387,17 +433,111 @@ class RRTPathOptimization:
             self.opti.set_value(self.startPos[:, i], initial_path[i].x)
 
 
-        #for i, obstacle in enumerate(obstacles):
-        #    self.opti.set_value(self.closestPointObstacle[:, i], obstacle.closestPointObstacle)
-        #    self.opti.set_value(self.translation[:, i], obstacle.translation)
-        #    self.opti.set_value(self.normal[:, i], obstacle.normal)
-        #    self.opti.set_value(self.distance[i], obstacle.minDistance)
-
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
 
         sol = self.opti.solve_limited()
         return sol
+    def f_numpy(self, state: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
+        """
+        Compute next state using the same dynamics as robot.f, but in NumPy (no CasADi).
+        """
+        x = state[0:3]
+        v = state[3:6]
+        q = state[6:10]
+        w = state[10:13]
+
+        F = self.robot.A[0:3, :] @ u
+        M = self.robot.A[3:6, :] @ u
+
+        # Position and velocity update
+        x_next = x + v * dt
+        R_q = R.from_quat(q).as_matrix()
+        v_next = v + (dt / self.robot.m) * (R_q @ F)
+
+        # Quaternion integration
+        w_norm = np.linalg.norm(w) + 1e-3
+        axis = w / w_norm
+        theta = w_norm * dt
+        dq = R.from_rotvec(axis * theta).as_quat()
+        q_next = R.from_quat(dq) * R.from_quat(q)
+        q_next = q_next.as_quat()
+
+        # Angular velocity update
+        J = self.robot.J
+        w_next = w + dt * np.linalg.inv(J) @ (M - np.cross(w, J @ w))
+
+        return np.hstack([x_next, v_next, q_next, w_next])
+
+    def debug_constraints(self, sol: ca.OptiSol, obstacles: List[Obstacle]):
+        import numpy as np
+
+        x_val = sol.value(self.x)
+        u_val = sol.value(self.u)
+        dt_val = float(sol.value(self.dt))
+
+        print("\n=== Decision Variables ===")
+        print(f"dt = {dt_val:.6f}")
+        for i in range(self.N):
+            print(f"State {i}:")
+            print(f"  pos      = {x_val[0:3, i].flatten()}")
+            print(f"  vel      = {x_val[3:6, i].flatten()}")
+            print(f"  quat     = {x_val[6:10, i].flatten()}")
+            print(f"  ang_vel  = {x_val[10:13, i].flatten()}")
+            print(f"  control  = {u_val[:, i].flatten()}")
+
+        print("\n=== Obstacle Constraints ===")
+        P_R_base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
+        for i, obs in enumerate(obstacles):
+            c_R = x_val[0:3, i + 1]
+            q_i = x_val[6:10, i + 1]
+            R_i = R.from_quat(q_i).as_matrix()
+            P_R_inv = R_i @ np.linalg.inv(P_R_base) @ R_i.T
+            xi_val = sol.value(self.xi_[:, i])
+            mu_r_val = float(sol.value(self.mu_r_[i]))
+            nu_val = float(sol.value(self.nu_[i]))
+            cube_vertices = obs.generateCube()
+
+            print(f"\nObstacle iter {i}:")
+            c1 = -0.25 * np.dot(xi_val, xi_val) - np.dot(xi_val, c_R) - mu_r_val - nu_val - obs.safetyMargin**2
+            if c1 < 0:
+                print(f"  Constraint 1 (support function): {float(c1):.6f} >= 0")
+
+            c2_all = cube_vertices.T @ xi_val + mu_r_val
+            for j, c2 in enumerate(c2_all):
+                if c2 < 0:
+                    print(f"  Constraint 2.{j+1} (vertex): {float(c2):.6f} >= 0")
+
+            c3 = np.dot(xi_val, xi_val) - 4 * obs.safetyMargin**2
+            if c3 < 0:
+                print(f"  Constraint 3 (norm): {float(c3):.6f} >= 0")
+
+            c4 = nu_val**2 - float(np.dot(xi_val, P_R_inv @ xi_val))
+            if c4 < 0:  
+                print(f"  Constraint 4 (dual): {float(c4):.6f} >= 0")
+
+        print("\n=== Dynamics Constraints ===")
+        for i in range(self.N - 1):
+            state_i = x_val[:, i]
+            u_i = u_val[:, i]
+            actual = x_val[:, i + 1]
+            predicted = self.f_numpy(state_i, u_i, dt_val)
+            residual = actual - predicted
+            print(f"  Dynamics {i}: max residual = {np.max(np.abs(residual)):.2e}")
+
+
+        print("\n=== Actuation Bounds ===")
+        for i in range(self.N):
+            u_i = u_val[:, i]
+            if not np.all((-3 <= u_i) & (u_i <= 3)):
+                print(f"  u[{i}] out of bounds: {u_i}")
+
+        print("\n=== State Bounds ===")
+        for i in range(self.N):
+            x_i = x_val[:, i]
+            if not np.all((self.stateMinValues <= x_i) & (x_i <= self.stateMaxValues)):
+                print(f"  x[{i}] out of bounds.")
+
 
     def getSolution(self, sol: ca.OptiSol) -> List[OptimizationState]:
 
@@ -419,7 +559,7 @@ class RRTPathOptimization:
             dt,
         )
 
-    def visualize_trajectory(self, initial_path, optimized_path, voxel_mesh):
+    def visualize_trajectory(self, initial_path, optimized_path, voxel_mesh, obstacles=None):
         plotter = pv.Plotter()
         plotter.add_mesh(voxel_mesh, color="red", opacity=0.4)
 
@@ -430,13 +570,24 @@ class RRTPathOptimization:
             T[:3, 3] = s.x
             mesh.transform(T)
             plotter.add_mesh(mesh, color="green", opacity=0.4)
+
         for s in optimized_path:
             mesh = pv.ParametricEllipsoid(0.24, 0.24, 0.10)
             T = np.eye(4)
             T[:3, :3] = R.from_quat(s.q).as_matrix()
             T[:3, 3] = s.x
             mesh.transform(T)
-            plotter.add_mesh(mesh, color="blue : List[RRTState]", opacity=0.4)
+            plotter.add_mesh(mesh, color="blue", opacity=0.4)
+
+        if obstacles is not None:
+            for obs in obstacles:
+                square = obs.generateSquare()
+                faces = np.array([[4, 0, 1, 2, 3]])  # single quad face
+                surf = pv.PolyData(square.T, faces)
+                plotter.add_mesh(surf, color="yellow", opacity=0.3, style='wireframe')
+                plotter.add_points(obs.closestPointObstacle, color="orange", point_size=10)
+                plotter.add_arrows(obs.closestPointObstacle[np.newaxis, :],
+                                obs.normal[np.newaxis, :], mag=0.3, color="orange")
+
         plotter.add_axes()
-        #plotter.export_html("OptimizedTrajectory.html")
         return plotter

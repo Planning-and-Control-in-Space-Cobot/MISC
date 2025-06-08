@@ -28,6 +28,26 @@ def createPyBox(axis):
     box = pv.Box(bounds=(-axis[0]/2, axis[0]/2, -axis[1]/2, axis[1]/2, -axis[2]/2, axis[2]/2))
     return box
 
+def computeRobotObstacles(robot, environment, path):
+    '''
+    Computes the robot's obstacles based on the path and the environment
+    '''
+
+    obstacles = []
+    for i, p in enumerate(path[1:-1]):
+        x = p.x
+        q = p.q
+        R = trf.Rotation.from_quat(q)
+        if environment.numCollisions(robot.fcl_obj, x, q) > 0:
+            return None 
+
+        _, p_obj, p_env = environment.getClosestPoints(robot.fcl_obj, x, q)
+        translation = p_obj - x
+        translation = R.as_matrix().T @ translation
+        obstacle = Obstacle(p_obj, p_env, translation, i) 
+        obstacles.append(obstacle)
+    return obstacles
+
 def main():
     parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
 
@@ -85,7 +105,7 @@ def main():
         payloadOriginalAttitude = np.array([0, 0, 0, 1])
         payloadMesh = None
 
-    if args.onlyRRT:
+    if args.onlyRRT or not args.useSavedPath:
         print("Running only RRT without optimization considerations")
         if not args.considerPayload:
             print("Not considering the payload during RRT planning")
@@ -104,8 +124,65 @@ def main():
         path = planner.plan(start, goal)
         if not path.pathEmpty():
             pv_ = path.visualizePath(environment, payload)                                    
+            with open(os.path.join(script_dir, "path.pkl"), "wb") as f:
+                pickle.dump(path, f)
             pv_.show()
         return
+    else:
+        print("Using saved path for optimization")
+        with open(os.path.join(script_dir, "path.pkl"), "rb") as f:
+            path = pickle.load(f)
+        print(f"Loaded path with {len(path.states)} states from 'path.pkl'")
+    
+    if args.onlyRRT:
+        return
+    
+    print("Running RRT Path Optimization")
+    A = np.load(os.path.join(script_dir, "A_matrix.npy"))
+    J = np.load(os.path.join(script_dir, "J_matrix.npy"))
+    m = np.load(os.path.join(script_dir, "mass.npy"))
+    optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
+
+    robot = Robot(J, A, m, environment.buildEllipsoid())
+    stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
+    rrtOpt = RRTPathOptimization(stateLowerBound, stateUpperBound, environment, robot)
+    xi = np.zeros(13)
+    xf = np.zeros(13)
+    xi[0:3] = optimizationPath[0].x
+    xi[6:10] = optimizationPath[0].q
+    xf[0:3] = optimizationPath[-1].x
+    xf[6:10] = optimizationPath[-1].q
+
+    # get obstacles from the path
+    
+    obstacles = computeRobotObstacles(robot, environment, optimizationPath)
+    rrtOpt.setup_optimization(optimizationPath, obstacles, xi, xf)
+
+    prev_u = np.zeros((6, len(optimizationPath)))
+    dt = 1
+
+    for i in range(100):
+        print(f"Iteration {i}")
+        obstacles = computeRobotObstacles(robot, environment, optimizationPath)
+        if obstacles is None:
+            print("No valid obstacles found, exiting optimization")
+            exit(1)
+        sol = rrtOpt.optimize(optimizationPath, obstacles, dt=dt, prev_u=prev_u)
+        #rrtOpt.debug_constraints(sol, obstacles)
+        optimizationPath, prev_u, dt = rrtOpt.getSolution(sol)
+    print("Optimization completed successfully with delta time:", dt)
+
+    for p, u in zip(optimizationPath, prev_u.T):
+        print(f"pos: {p.x}, quat {p.q} vel {p.v} w {p.w},  Control: {u}")
+
+    initialPath = [OptimizationState(p.x, p.q) for p in path.states]
+    pv_ = rrtOpt.visualize_trajectory(initialPath, optimizationPath, environment.voxel_mesh, obstacles)
+    pv_.show()
+
+
+
+    
 
 
 
@@ -122,7 +199,7 @@ def main():
     fcl_obj = rrtEnv.buildEllipsoid()
 
     robot = Robot(J, A, m, fcl_obj)
-    stateLowerBound = np.array([-25, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
     
     rrtOpt = RRTPathOptimization(stateLowerBound, stateUpperBound, rrtEnv, robot)
