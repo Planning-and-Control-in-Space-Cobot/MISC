@@ -5,6 +5,7 @@ import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
 import pickle
+import trimesh as tm
 
 # Add the executable directory to the system path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,11 +29,7 @@ def createPyBox(axis):
     box = pv.Box(bounds=(-axis[0]/2, axis[0]/2, -axis[1]/2, axis[1]/2, -axis[2]/2, axis[2]/2))
     return box
 
-def computeRobotObstacles(robot, environment, path):
-    '''
-    Computes the robot's obstacles based on the path and the environment
-    '''
-
+def drawEnvironmentAndNormals(robot, environment, path):
     obstacles = []
     for i, p in enumerate(path[1:-1]):
         x = p.x
@@ -46,7 +43,68 @@ def computeRobotObstacles(robot, environment, path):
         translation = R.as_matrix().T @ translation
         obstacle = Obstacle(p_obj, p_env, translation, i) 
         obstacles.append(obstacle)
-    return obstacles
+
+    newNormal = []
+    np.set_printoptions(precision=4, suppress=True)
+    for obs in obstacles:
+        print(f"obs.normal: {obs.normal}")
+
+    for obs in obstacles:
+        append = True
+        for normal, _ in newNormal:
+            if np.allclose(normal, obs.normal, atol=1e-2):
+                print(f"Equal Normal found {normal} {obs.normal}")
+                append = False
+                break
+        if  append:
+            newNormal.append((obs.normal, obs.closestPointObstacle))
+    print(f"len(obstacles) vs len(newNormal): {len(obstacles)} {len(newNormal)}") 
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1)
+    for normal, point in newNormal:
+        pv_.add_arrows(point, normal, mag=0.3, color="orange")
+    pv_.show()
+
+def drawEnvironmentAndObstacles(environment, obstacles):
+    '''
+    Draws the environment and the obstacles in a PyVista plotter.
+    
+    Parameters:
+        environment (EnvironmentHandler): The environment handler containing the voxel mesh.
+        obstacles (list[Obstacle]): List of obstacles to be visualized.
+    
+    Returns:
+        pv.Plotter: The PyVista plotter with the environment and obstacles.
+    '''
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+    
+    for obs in obstacles:
+        pos = obs.closestPointObstacle
+        normal = obs.normal
+        pv_.add_arrows(pos, normal, mag=0.3, color="orange")
+    pv_.show()
+    
+    return pv_
+def createEllipsoidMesh(ellipsoidRadii : np.ndarray = np.array([0.24, 0.24, 0.10])) -> tm.Trimesh:
+    '''
+    Create a trimesh ellipsoid mesh with a given radius in each semi axis.
+
+    Parameters:
+        ellipsoidRadii (np.ndarray): The radii of the ellipsoid in each semi axis.
+    
+    Returns:
+        tm.Trimesh: The trimesh ellipsoid mesh.:w
+
+    '''
+    mesh  = tm.creation.icosphere(
+        subdivisions=3, radius=1.0
+    )
+    radii = ellipsoidRadii.tolist()
+    radii.append(1.0)
+    scaleMatrix = np.diag(radii)
+    mesh.apply_transform(scaleMatrix)
+    return mesh
 
 def main():
     parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
@@ -67,6 +125,7 @@ def main():
     parser.add_argument("--onlyRRT", "-r", type=str2bool, default=False, help="Only run RRT without optimization considerations, path will be saved as 'path.pkl'")
     parser.add_argument("--considerPayload", "-cp", type=str2bool, default=False, help="Consider payload during planning")
     parser.add_argument("--payloadData", "-pd", type=str, default="payloadData.npz", help="Path to the payload data file")
+    parser.add_argument("--map", "-m", type=str, default="map.pcd", help="Path to the point cloud map file")
 
     args = parser.parse_args()
 
@@ -76,10 +135,14 @@ def main():
     
     if args.onlyRRT and args.useSavedPath:
         raise ValueError("Cannot use saved path in only RRT mode. Please run without --useSavedPath or with --onlyRRT set to false")
+    
+    if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)):
+        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
+        raise ValueError(f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file.")
 
     pcd = o3d.io.read_point_cloud(
         os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "map.pcd"
+            os.path.dirname(os.path.abspath(__file__)), args.map
         )
     )
     environment = EnvironmentHandler(pcd)
@@ -113,21 +176,51 @@ def main():
         else:
             print("Considering the payload during the RRT planning")
 
-        start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
-        start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
-        goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
+        
+        start = RRTState(np.array([2.75, 2, 1.0]), np.array([0., 0.707, 0, 0.707]))
+        goal = RRTState(np.array([2.75, 2.0, 7.0]), np.array([0.0, 0.707, 0, 0.707]))
+        minPos = np.array([1.5, 1, 0])
+        maxPos = np.array([4.0, 6, 10])
+        #start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
+        #goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
         robot = environment.buildEllipsoid()
         robotMesh = pv.ParametricEllipsoid(
             0.24, 0.24, 0.10, center=(0, 0, 0)
         )
-        planner = RRTPlanner(environment, robot, robotMesh, payload, payloadMesh, payloadTranslation, payloadOriginalAttitude)
+        planner = RRTPlanner(environment, robot, robotMesh, payload, payloadMesh, payloadTranslation, payloadOriginalAttitude, posMin=minPos, posMax=maxPos)
         path = planner.plan(start, goal)
         if not path.pathEmpty():
-            pv_ = path.visualizePath(environment, payload)                                    
+            pv_ = path.visualizePath(environment, payload)
             with open(os.path.join(script_dir, "path.pkl"), "wb") as f:
                 pickle.dump(path, f)
             pv_.show()
+        else:
+            print("RRT failed to find a path. Showing all sampled poses.")
+            tree_start = [node.state for node in planner.tree_start]
+            tree_goal = [node.state for node in planner.tree_goal]
+            if not tree_start or not tree_goal:
+                print("No sampled states available to visualize.")
+                return
+
+            pv_ = pv.Plotter()
+            pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1)
+
+
+            for state in tree_start:
+                print(f"State {state.i}: pos={state.x}, quat={state.q}")
+                robot_mesh = path.getRobotMesh(state)
+                if robot_mesh is not None:
+                    pv_.add_mesh(robot_mesh, color="blue", opacity=0.4)
+
+            for state in tree_goal:
+                print(f"State {state.i}: pos={state.x}, quat={state.q}")
+                robot_mesh = path.getRobotMesh(state)
+                if robot_mesh is not None:
+                    pv_.add_mesh(robot_mesh, color="red", opacity=0.4)
+
+            pv_.show()
         return
+
     else:
         print("Using saved path for optimization")
         with open(os.path.join(script_dir, "path.pkl"), "rb") as f:
@@ -143,9 +236,15 @@ def main():
     m = np.load(os.path.join(script_dir, "mass.npy"))
     optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
 
-    robot = Robot(J, A, m, environment.buildEllipsoid())
-    stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
-    stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
+    robot = Robot(J, A, m, environment.buildEllipsoid(),  createEllipsoidMesh())
+    
+
+
+    #min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
+    stateLowerBound = np.array([1.5, 1, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    stateUpperBound = np.array([4, 6, 10, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
+    #stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    #stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
     rrtOpt = RRTPathOptimization(stateLowerBound, stateUpperBound, environment, robot)
     xi = np.zeros(13)
     xf = np.zeros(13)
@@ -155,20 +254,15 @@ def main():
     xf[6:10] = optimizationPath[-1].q
 
     # get obstacles from the path
-    
-    obstacles = computeRobotObstacles(robot, environment, optimizationPath)
-    rrtOpt.setup_optimization(optimizationPath, obstacles, xi, xf)
+    allObstacles = rrtOpt.setup_optimization(optimizationPath, True, xi, xf)
+    drawEnvironmentAndObstacles(environment, allObstacles)
 
     prev_u = np.zeros((6, len(optimizationPath)))
     dt = 1
 
-    for i in range(100):
+    for i in range(1):
         print(f"Iteration {i}")
-        obstacles = computeRobotObstacles(robot, environment, optimizationPath)
-        if obstacles is None:
-            print("No valid obstacles found, exiting optimization")
-            exit(1)
-        sol = rrtOpt.optimize(optimizationPath, obstacles, dt=dt, prev_u=prev_u)
+        sol = rrtOpt.optimize(optimizationPath, dt=dt, prev_u=prev_u)
         #rrtOpt.debug_constraints(sol, obstacles)
         optimizationPath, prev_u, dt = rrtOpt.getSolution(sol)
     print("Optimization completed successfully with delta time:", dt)
@@ -177,8 +271,11 @@ def main():
         print(f"pos: {p.x}, quat {p.q} vel {p.v} w {p.w},  Control: {u}")
 
     initialPath = [OptimizationState(p.x, p.q) for p in path.states]
-    pv_ = rrtOpt.visualize_trajectory(initialPath, optimizationPath, environment.voxel_mesh, obstacles)
+    pv_ = rrtOpt.visualize_trajectory(initialPath, optimizationPath, environment.voxel_mesh, allObstacles)
+    for i, o in zip(initialPath, optimizationPath):
+        print(f"i: {i.x} o : {o.x} ")
     pv_.show()
+
 
 
 

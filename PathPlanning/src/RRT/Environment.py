@@ -155,7 +155,7 @@ class EnvironmentHandler:
             None
 
         Returns:
-            fcl.CollisionObject: fcl collision object representing the point
+            fcl.CollisionGeometry: fcl collision object representing the point
 
         Raises:
             None
@@ -271,20 +271,19 @@ class EnvironmentHandler:
 
         if obj2 is None:
             obj2 = self.fcl_env
-
         rot1 = trf.Rotation.from_quat(q1).as_matrix()
         tf1 = fcl.Transform(rot1, p1)
         obj1.setTransform(tf1)
+
 
         rot2 = trf.Rotation.from_quat(q2).as_matrix()
         tf2 = fcl.Transform(rot2, p2)
         obj2.setTransform(tf2)
 
-        req = fcl.DistanceRequest(enable_nearest_points=True)
+        req = fcl.DistanceRequest(enable_nearest_points=True, enable_signed_distance=True)
         res = fcl.DistanceResult()
 
         ret = fcl.distance(obj1, obj2, req, res)
-
         if res.o1 == obj1:
             pt1 = res.nearest_points[0]
             pt2 = res.nearest_points[1]

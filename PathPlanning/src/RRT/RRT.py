@@ -104,10 +104,11 @@ class RRTPath:
             if robot_mesh is not None:
                 pv_.add_mesh(robot_mesh, color="blue", opacity=0.4)
 
-            payload_mesh = self.getPayloadMesh(state)
-            print(f"num Collisions: {env.numCollisions(payload, state.x + trf.Rotation.from_quat(state.q).apply(self.payloadTranslation), state.q)}")
-            if payload_mesh is not None:
-                pv_.add_mesh(payload_mesh, color="green", opacity=0.4)
+            if self.considerPayload:
+                payload_mesh = self.getPayloadMesh(state)
+                print(f"num Collisions: {env.numCollisions(payload, state.x + trf.Rotation.from_quat(state.q).apply(self.payloadTranslation), state.q)}")
+                if payload_mesh is not None:
+                    pv_.add_mesh(payload_mesh, color="green", opacity=0.4)
 
         return pv_
 
@@ -129,8 +130,8 @@ class RRTPlanner3D:
         step_size=0.3,
         goal_tolerance=0.3,
         goal_sample_rate=0.4,
-        max_iters=10000,
-        numTriesSampling=100,
+        max_iters=30000,
+        numTriesSampling=1000,
         posMin: List[float] = [0, -5, 0],
         posMax: List[float] = [10, 20, 2]
     ):
@@ -152,6 +153,41 @@ class RRTPlanner3D:
         self.considerPayload = payload is not None
         self.path: List[RRTState] = []
 
+    def _extend(self, tree: List["RRTPlanner3D.Node"], target: RRTState) -> Optional["RRTPlanner3D.Node"]:
+        nearest = min(tree, key=lambda n: n.state.distance_to(target))
+        dist = nearest.state.distance_to(target)
+        alpha = min(self.step_size / dist, 1.0) if dist > 1e-6 else 1.0
+        new_state = self._interpolate(nearest.state, target, alpha)
+
+        if self._motion_valid(nearest.state, new_state, considerPayload=self.considerPayload):
+            new_node = self.Node(new_state, nearest)
+            tree.append(new_node)
+            return new_node
+        return None
+
+    def _connect(self, tree: List["RRTPlanner3D.Node"], target: RRTState) -> Optional["RRTPlanner3D.Node"]:
+        nearest = min(tree, key=lambda n: n.state.distance_to(target))
+        dist = nearest.state.distance_to(target)
+        alpha = min(self.step_size / dist, 1.0) if dist > 1e-6 else 1.0
+        new_state = self._interpolate(nearest.state, target, alpha)
+
+        if not self._motion_valid(nearest.state, new_state, considerPayload=self.considerPayload):
+            return None
+
+        node = self.Node(new_state, nearest)
+        tree.append(node)
+
+        # Keep connecting until goal is reached
+        while new_state.distance_to(target) > self.goal_tolerance:
+            nearest = node
+            dist = nearest.state.distance_to(target)
+            alpha = min(self.step_size / dist, 1.0)
+            new_state = self._interpolate(nearest.state, target, alpha)
+            if not self._motion_valid(nearest.state, new_state, considerPayload=self.considerPayload):
+                return None
+            node = self.Node(new_state, nearest)
+            tree.append(node)
+        return node
     def _interpolate(self, s1: RRTState, s2: RRTState, alpha: float) -> RRTState:
         '''
         Interpolate between two RRTState objects using linear interpolation for position and spherical linear interpolation (slerp) for quaternion.
@@ -284,10 +320,10 @@ class RRTPlanner3D:
 
         for _ in range(self.numTriesSampling):
             pos = np.random.uniform(posMin, posMax)
-            print(f"Sampling position: {pos}")
             quat = R.random().as_quat()
             state = RRTState(pos, quat)
             if self._is_valid(state, env, robot, payload, translation, considerPayload):
+                print(f"Sampling Valid State: pos={state.x}, quat={state.q}")
                 return state
 
         return goal
@@ -331,32 +367,15 @@ class RRTPlanner3D:
 
     def plan(self,
             start: RRTState,
-            goal: RRTState, 
-            env : CollisionEnvironment3D = _unset, 
-            robot : fcl.CollisionObject = _unset,
-            payload: Optional[fcl.CollisionObject] = _unset, 
+            goal: RRTState,
+            env: CollisionEnvironment3D = _unset,
+            robot: fcl.CollisionObject = _unset,
+            payload: Optional[fcl.CollisionObject] = _unset,
             translation: np.ndarray = _unset,
-            originalPayloadAttitude = _unset,
-            posMin = _unset, 
-            posMax = _unset) -> List[RRTState]:
-        '''
-        Try to plan a path from start to goal using the RRT algorithm.
-        Some of the arguments are optional, and if they are not passed, then the ones passed in the __init__ function of this class will be used
+            originalPayloadAttitude= _unset,
+            posMin=_unset,
+            posMax=_unset) -> RRTPath:
 
-        Parameters
-            start (RRTState): The starting state of the robot.
-            goal (RRTState): The goal state of the robot.
-            env (CollisionEnvironment3D): The environment in which the robot operates.
-            robot (fcl.CollisionObject): The collision object representing the robot.
-            payload (Optional[fcl.CollisionObject]): The collision object representing the payload, if any.
-            translation (np.ndarray): The translation vector for the payload.
-            originalPayloadAttitude (trf.Rotation): The original attitude of the payload.
-            posMin (List[float]): Minimum position bounds for sampling.
-            posMax (List[float]): Maximum position bounds for sampling.
-        
-        Returns
-            RRTPath : A RRTPath object containing the planned path and relevant information.
-        '''
         env = env if env is not _unset else self.env
         robot = robot if robot is not _unset else self.robot
         payload = payload if payload is not _unset else self.payload
@@ -365,22 +384,28 @@ class RRTPlanner3D:
         posMin = posMin if posMin is not _unset else self.posMin
         posMax = posMax if posMax is not _unset else self.posMax
 
-        tree = [self.Node(start)]
-        self.path = []
-        for i in range(self.max_iters):
-            print(f"Iteration {i+1}/{self.max_iters}")
-            rand = self._sample(goal, considerPayload=self.considerPayload)
-            nearest = min(tree, key=lambda n: n.state.distance_to(rand))
-            direction = nearest.state.distance_to(rand)
-            alpha = min(self.step_size / direction, 1.0) if direction != 0 else 1.0
-            new = self._interpolate(nearest.state, rand, alpha)
+        self.tree_start = [self.Node(start)]
+        self.tree_goal = [self.Node(goal)]
 
-            if self._motion_valid(nearest.state, new, considerPayload=self.considerPayload):
-                node = self.Node(new, nearest)
-                tree.append(node)
-                if new.distance_to(goal) < self.goal_tolerance:
-                    self.path = self._reconstruct(node)
-                    break
+        for i in range(self.max_iters):
+            print(f"Bi-RRT Iteration {i+1}/{self.max_iters}")
+            rand = self._sample(goal, considerPayload=self.considerPayload)
+
+            # Extend start tree
+            node_start = self._extend(self.tree_start, rand)
+            if node_start is None:
+                continue
+
+            # Try to connect goal tree to the new node
+            node_goal = self._connect(self.tree_goal, node_start.state)
+            if node_goal is not None:
+                path_start = self._reconstruct(node_start)
+                path_goal = self._reconstruct(node_goal)
+                self.path = path_start + path_goal[::-1]
+                break
+
+            # Swap trees
+            self.tree_start, self.tree_goal = self.tree_goal, self.tree_start
 
         return self._createPath(self.path)
         

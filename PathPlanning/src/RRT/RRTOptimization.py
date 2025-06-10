@@ -24,215 +24,9 @@ from typing import Any, Dict, Optional, Union, TypeVar
 _T = TypeVar('_T', bound='Model')
 from typing_extensions import override
 
+from Robot import Robot
+from Obstacle import Obstacle
 
-class Model: 
-    def __init__(self, name :  str, CollisionGeometry : fcl.CollisionGeometry = None, mesh : o3d.geometry.TriangleMesh = None):
-        '''
-        Base class for a model in the optimization problem, this class will be used to represent the robot dynamics, shape and collision geometry
-
-        The init function of the model may be overloaded if necessary
-        Parameters
-            name (str): Name of the model
-            collisionGeometry (fcl.CollisionGeometry): Collision geometry of the model, this will be used to compute the collision constraints in the optimization problem
-            mesh (o3d.geometry.TriangleMesh): Mesh of the model, this will be used to visualize the model in the optimization problem
-        '''
-        self.collisionGeometry = None
-
-
-    def getCollisionGeometry(self):
-        '''
-        Function to get the collision geometry of the model, '''
-    
-
-    @abstractmethod    
-    def f(self, state, u, dt):
-        '''
-        Function to compute the next state of the Model given the current state, control inputs and time step
-
-
-        Parameters
-            state (np.ndarray): current state of the model
-            u (np.ndarray): control inputs
-            dt (float): time step
-        Returns
-            np.ndarray: next state of the model
-        '''
-        raise NotImplementedError("This method should be implemented in the subclass")    
-
-
-
-class Robot(Model):
-    @override
-    def __init__(
-        self, J: np.ndarray, A: np.ndarray, m: float, fcl_obj : fcl.CollisionGeometry 
-    ):
-        """
-        Robot class to represent the robot in the optimization problem
-
-        Parameters
-            J (np.ndarray): inertia matrix of the robot
-            A (np.ndarray): actuation matrix of the robot
-            m (float): mass of the robot
-            ellipsoid_radius (np.ndarray): radius of the ellipsoid that
-                represents the robot
-
-        Returns
-            None
-        """
-        if (
-            np.shape(J) != (3, 3)
-            or np.shape(A) != (6, 6)
-            or m <= 0
-        ):
-            raise ValueError(
-                "J must be a 3x3 matrix, A must be a 6x6 matrix, ellipsoid_radius must be a 3x1 vector and m must be a positive scalar"
-            )
-
-        self.J = J
-        self.A = A
-        self.m = m
-        self.fcl_obj = fcl_obj
-
-    
-    @override
-    def f(self, state, u, dt):
-        def unflat(state, u):
-            x = state[0:3]
-            v = state[3:6]
-            q = state[6:10]
-            w = state[10:13]
-            return x, v, q, w, self.A[0:3, :] @ u, self.A[3:6, :] @ u
-
-        def flat(x, v, q, w):
-
-            return ca.vertcat(x, v, q, w)
-
-        def quat_mul(q1, q2):
-            q1x, q1y, q1z, q1w = q1[0], q1[1], q1[2], q1[3]
-            q2x, q2y, q2z, q2w = q2[0], q2[1], q2[2], q2[3]
-            q_ = ca.vertcat(
-                ca.horzcat(q1w, q1z, -q1y, q1x),
-                ca.horzcat(-q1z, q1w, q1x, q1y),
-                ca.horzcat(q1y, -q1x, q1w, q1z),
-                ca.horzcat(-q1x, -q1y, -q1z, q1w),
-            )
-            return q_ @ ca.vertcat(q2x, q2y, q2z, q2w)
-
-        def quat_int(q, w, dt):
-            w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
-            q_ = ca.vertcat(
-                w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)
-            )
-            return quat_mul(q_, q)
-
-        x, v, q, w, F, M = unflat(state, u)
-        R = sc.Rotation.from_quat(q)
-        x_next = x + v * dt
-        v_next = v + dt * (1 / self.m) * R.as_matrix() @ F
-        q_next = quat_int(q, w, dt)
-        w_next = w + dt * ca.inv(self.J) @ (M - ca.cross(w, self.J @ w))
-        return flat(x_next, v_next, q_next, w_next)
-
-    
-class Obstacle:
-    def __init__(
-        self,
-        closestPointRobot : np.ndarray, 
-        closestPointObstacle : np.ndarray, 
-        translation : np.ndarray, 
-        iteration : int,
-        safetyMargin : float = 0.1):
-        '''
-            This class represents an obstacle in the optimization problem
-
-            Parameters
-                closestPointRobot (np.ndarray): closest point on the robot
-                closestPointObstacle (np.ndarray): closest point on the obstacle
-                translation (np.ndarray): translation from the center of the robot to the closest point in the robot
-                iteration (int) :  the iteration in the optimization problem that this obstacle plane should be considered
-                safetyMargin (float): safety margin for the obstacle
-        '''
-
-        self.closestPointRobot = closestPointRobot
-        self.closestPointObstacle = closestPointObstacle
-        self.translation = translation
-        self.iteration = iteration
-        self.normal = (self.closestPointRobot - self.closestPointObstacle) / np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
-        self.minDistance = np.linalg.norm(self.closestPointRobot - self.closestPointObstacle)
-        self.safetyMargin = safetyMargin
-    
-    def generateSquare(self):
-        """
-        Generate 4 vertices of a square in 3D space lying in a plane.
-
-        Parameters:
-        - p0 (array-like): 3D point on the plane (shape: (3,))
-        - n (array-like): 3D normal vector of the plane (shape: (3,))
-        - d (float): Half side length of the square (i.e., square is 2d x 2d)
-
-        Returns:
-        - V (np.ndarray): 3x4 matrix with columns as the 4 square vertices in 3D
-        """
-        # Pick a helper vector that is not parallel to n
-        helper = np.array([0, 1, 0]) if not np.allclose(self.normal, [0, 1, 0]) else np.array([1, 0, 0])
-
-        # Generate two orthonormal vectors in the plane
-        u = np.cross(self.normal, helper)
-        u /= np.linalg.norm(u)
-        v = np.cross(self.normal, u)
-        v /= np.linalg.norm(v)
-
-        minDistance_ = self.minDistance
-        self.minDistance = max(self.minDistance, 2)
-
-        # Compute square vertices
-        V = np.array([
-            self.closestPointObstacle + self.minDistance*u + self.minDistance*v,
-            self.closestPointObstacle - self.minDistance*u + self.minDistance*v,
-            self.closestPointObstacle - self.minDistance*u - self.minDistance*v,
-            self.closestPointObstacle + self.minDistance*u - self.minDistance*v
-        ]).T  # shape (3, 4)
-        self.minDistance = minDistance_
-
-        return V
-
-    def generateCube(self, ):
-        """
-        Generate 8 vertices of a cube in 3D space that lies in the half-space
-        away from the obstacle (in the direction opposite to the normal).
-
-        Parameters:
-        - size (float): edge length of the cube
-
-        Returns:
-        - V (np.ndarray): 3x8 array where each column is a 3D vertex
-        """
-        size = self.minDistance + self.safetyMargin
-        # Find center of cube, offset in the direction *away* from the obstacle
-        offset = -self.normal * (size / 2.0)
-        center = self.closestPointObstacle + offset
-
-        # Create orthonormal basis (u, v, n)
-        helper = np.array([0, 1, 0]) if not np.allclose(self.normal, [0, 1, 0]) else np.array([1, 0, 0])
-        u = np.cross(self.normal, helper)
-        u /= np.linalg.norm(u)
-        v = np.cross(self.normal, u)
-        v /= np.linalg.norm(v)
-        n = self.normal
-
-        # Half size in each direction
-        hs = size / 2.0
-
-        # Build 8 corners of the cube in the local frame and transform
-        directions = [
-            +u + v + n,  -u + v + n,  -u - v + n,  +u - v + n,
-            +u + v - n,  -u + v - n,  -u - v - n,  +u - v - n,
-        ]
-
-        V = np.stack([center + hs * d for d in directions], axis=1)  # 3x8
-
-        return V
-        
 class OptimizationState:
     """
     A class to represent the each state / step in the optimization, this class
@@ -273,13 +67,15 @@ class RRTPathOptimization:
         robot : Robot,
     ):
         self.robot = robot
+        self.env = env
         self.stateMinValues = stateMinValues
         self.stateMaxValues = stateMaxValues
 
     def setup_optimization(
         self,
         initial_path: List[OptimizationState],
-        obstacles: List[Obstacle],
+        sampleRobot = False,
+        stepSize = 0.30, 
         xi: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
         xf: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
     ):
@@ -289,8 +85,9 @@ class RRTPathOptimization:
 
         Parameters
             initial_path (List[OptimizationState]): initial path to optimize
-            obstacles (List[Obstacle]): list of obstacles to avoid
+            sampleRobot (bool): whether to sample the robot or not, default is False
             collisions (List[Collision]): list of collisions to avoid
+            stepSize (float): Max Movement from one step to another
             xi (np.ndarray): initial state of the robot
             xf (np.ndarray): final state of the robot
 
@@ -299,10 +96,7 @@ class RRTPathOptimization:
         """
         self.opti = ca.Opti()
 
-        self.num_obstacles = len(obstacles)
         self.N = len(initial_path)
-        if self.N != self.num_obstacles + 2:
-            raise ValueError("We need to consider one obstacle per step in the horizon except first and last, since they are the start and end states")
 
         # Define the optimization variables
         self.x = self.opti.variable(13, self.N)  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
@@ -312,10 +106,10 @@ class RRTPathOptimization:
         self.startPos = self.opti.parameter(3, self.N)
 
         # The distance to the obstacle in each of the steps
-        self.obstacleDistance = self.opti.parameter(1, self.N)
+        self.obstacleDistance = self.opti.parameter(1, self.N) # Minimum distance to the obstacles in each step in the path (does not matter if we sample the robot or not!)
 
         self.dt = self.opti.variable(1)
-        self.opti.subject_to(self.dt < 0.5)
+        self.opti.subject_to(self.dt < 0.2)
         self.opti.subject_to(self.dt > 0)
 
         # Optimization parameters
@@ -331,38 +125,46 @@ class RRTPathOptimization:
             self.opti.subject_to(
                 self.x[:, i + 1] == self.robot.f(self.x[:, i], self.u[:, i], self.dt)
             )
-
-        self.xi_ = self.opti.variable(3,self.N - 2)
-        self.mu_r_ = self.opti.variable(self.N - 2)
-        self.nu_ = self.opti.variable(self.N - 2)
-
-        self.distance = self.opti.parameter(1, self.num_obstacles)
+    
+        #self.distance = self.opti.parameter(1, self.num_obstacles)
 
         P_R_Base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
+        allObstacles = []
+        # Obstacle avoidance constraints - First we need to get the obstacle of the initial path
+        for i in range(1, self.N - 1):
+            path = initial_path[i]
+            obstacles = self.robot.getObstacles(self.env, path.x, R.from_quat(path.q), i, useSampling=sampleRobot)
+            allObstacles.extend(obstacles)
+            
+            for obstacle in obstacles:
+                xi = self.opti.variable(3)
+                mu_r = self.opti.variable(1)
+                nu = self.opti.variable(1)
 
+                self.opti.set_initial(xi, np.array([obstacle.safetyMargin * 2, 0, 0]))
+                self.opti.set_initial(mu_r, 0)
+                self.opti.set_initial(nu, 0)
 
-        for i, obstacle in  enumerate(obstacles):
+                c_R = self.x[0:3, i + 1]
+                R_current = sc.Rotation.from_quat(self.x[6:10, i + 1]).as_matrix()
+                P_R_inv = R_current @ ca.DM(np.linalg.inv(P_R_Base)) @ R_current.T
 
-            self.opti.set_initial(self.xi_[:, i], np.array([obstacle.safetyMargin * 2, 0, 0]))
-            self.opti.set_initial(self.mu_r_[i], 0)   
-            self.opti.set_initial(self.nu_[i], 0)
+                V_O = obstacle.generateCube()
 
-            c_R = self.x[0:3, i + 1]
-            R_current = sc.Rotation.from_quat(self.x[6:10, i + 1]).as_matrix()
-            P_R_inv = R_current @ ca.DM(np.linalg.inv(P_R_Base)) @ R_current.T
-
-            V_O = obstacle.generateCube()
-
-            self.opti.subject_to(- (1/4) * ca.dot(self.xi_[:, i], self.xi_[:, i]) - ca.dot(self.xi_[:, i], c_R) - self.mu_r_[i] - self.nu_[i] - obstacle.safetyMargin**2 > 0 + 1e-3)
-            # Constraint from the vertex representation of the polytope obstacle:
-            self.opti.subject_to(V_O.T @ self.xi_[:, i] + self.mu_r_[i] > 0 + 1e-3)
-            # Enforce the norm condition: ||ξ||² ≥ 4 Δ_min².
-            self.opti.subject_to(ca.dot(self.xi_[:, i], self.xi_[:, i]) > 4 * obstacle.safetyMargin**2 + 1e-3)
-            # Dual constraint linking ν and the ellipsoid shape:
-            self.opti.subject_to(self.nu_[i]**2 > ca.dot(self.xi_[:, i], ca.mtimes(P_R_inv, self.xi_[:, i])) + 1e-3)
-            self.opti.subject_to(self.nu_[i] > 0 + 1e-3)
-
-            self.opti.subject_to(ca.sumsqr(self.startPos[:, i] - self.x[0:3, i]) <= obstacle.minDistance**2)
+                self.opti.subject_to(- (1/4) * ca.dot(xi, xi) - ca.dot(xi, c_R) - mu_r - nu - obstacle.safetyMargin**2 > 0 + 1e-3)
+                # Constraint from the vertex representation of the polytope obstacle:
+                self.opti.subject_to(V_O.T @ xi + mu_r > 0 + 1e-3)
+                # Enforce the norm condition: ||ξ||² ≥ 4 Δ_min².
+                self.opti.subject_to(ca.dot(xi, xi) > 4 * obstacle.safetyMargin**2 + 1e-3)
+                # Dual constraint linking ν and the ellipsoid shape:
+                self.opti.subject_to(nu**2 > ca.dot(xi, ca.mtimes(P_R_inv, xi)) + 1e-3)
+                self.opti.subject_to(nu > 0 + 1e-3)
+                #self.opti.subject_to(ca.sumsqr(self.startPos[:, i] - self.x[0:3, i]) <= obstacle.minDistance**2)
+        
+        for i in range(self.N - 1):
+            self.opti.subject_to(
+                ca.sumsqr(self.x[0:3, i + 1] - self.x[0:3, i]) <= stepSize ** 2
+            )
 
         # State and actuation constraints
         for i in range(self.N):
@@ -371,7 +173,7 @@ class RRTPathOptimization:
 
         # Define the cost function
         cost = 0
-        cost += 10000 * self.dt
+        cost += 100 * self.dt
         # Penalize variation in attitude 
         #for i in range(self.N - 1):
         #    cost += (1 - ca.dot(self.x[6:10, i], self.x[6:10, i + 1])**2)  
@@ -380,48 +182,44 @@ class RRTPathOptimization:
             cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
         for i in range(1, self.N - 1):
-            cost += (self.x[0:3] - self.xf[0:3]).T @ 0.1 @ (self.x[0:3] - self.xf[0:3])
+            cost += (self.x[0:3, i] - self.xf[0:3]).T @ (self.x[0:3, i] - self.xf[0:3])
 
         self.opti.minimize(cost)
 
-        #self.opti.solver("ipopt", 
-        #    {
-        #        "print_time": False
-        #    },
-        #    {
-        #        "print_level": 0,
-        #        "max_iter": 10000,
-        #        "warm_start_init_point": "yes",        # Use initial guess
-        #        "linear_solver" : "ma97", 
-        #        "mu_strategy": "adaptive",
-        #        "hessian_approximation": "limited-memory",
-        #    }
-        #)
-
-        self.opti.solver(
-            "sqpmethod",
+        self.opti.solver("ipopt", 
             {
-                "max_iter": 1,
-                # "max_inner_iter" : 1,
-                "qpsol_options": {
-                    "nWSR": 1,
-                    "error_on_fail": False,
-                },
+         #       "print_time": False
             },
-            {},
+            {
+        #        "print_level": 0,
+                "max_iter": 1000,
+                "warm_start_init_point": "yes",        # Use initial guess
+                "linear_solver" : "ma97", 
+                "mu_strategy": "adaptive",
+                "hessian_approximation": "limited-memory",
+            }
         )
+
+        return allObstacles
+        #self.opti.solver(
+        #    "sqpmethod",
+        #    {
+        #        "max_iter": 1,
+        #        # "max_inner_iter" : 1,
+        #        "qpsol_options": {
+        #            "nWSR": 1,
+        #            "error_on_fail": False,
+        #        },
+        #    },
+        #    {},
+        #)
 
     def optimize(
         self,
         initial_path: List[OptimizationState],
-        obstacles: List[Obstacle],
         dt: float = 1,
         prev_u: np.ndarray = None,
     ):
-        if self.num_obstacles != len(obstacles):
-            raise ValueError(
-                "Number of obstacles has changed, please call the setup optimization function again with the correct number of obstacles"
-            )
         self.opti.set_initial(self.dt, dt)
 
         for i in range(self.N):
@@ -561,7 +359,7 @@ class RRTPathOptimization:
 
     def visualize_trajectory(self, initial_path, optimized_path, voxel_mesh, obstacles=None):
         plotter = pv.Plotter()
-        plotter.add_mesh(voxel_mesh, color="red", opacity=0.4)
+        plotter.add_mesh(voxel_mesh, color="red", opacity=0.1)
 
         for s in initial_path:
             mesh = pv.ParametricEllipsoid(0.24, 0.24, 0.10)
