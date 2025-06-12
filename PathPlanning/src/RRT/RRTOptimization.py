@@ -94,6 +94,7 @@ class RRTPathOptimization:
         Returns
             None
         """
+        print(f"xi: {xi}, xf: {xf}")
         self.opti = ca.Opti()
 
         self.N = len(initial_path)
@@ -102,8 +103,6 @@ class RRTPathOptimization:
         self.x = self.opti.variable(13, self.N)  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
         self.u = self.opti.variable(6, self.N)
 
-        # The start position of the robot in each of the steps
-        self.startPos = self.opti.parameter(3, self.N)
 
         # The distance to the obstacle in each of the steps
         self.obstacleDistance = self.opti.parameter(1, self.N) # Minimum distance to the obstacles in each step in the path (does not matter if we sample the robot or not!)
@@ -159,12 +158,11 @@ class RRTPathOptimization:
                 # Dual constraint linking ν and the ellipsoid shape:
                 self.opti.subject_to(nu**2 > ca.dot(xi, ca.mtimes(P_R_inv, xi)) + 1e-3)
                 self.opti.subject_to(nu > 0 + 1e-3)
-                #self.opti.subject_to(ca.sumsqr(self.startPos[:, i] - self.x[0:3, i]) <= obstacle.minDistance**2)
         
-        for i in range(self.N - 1):
-            self.opti.subject_to(
-                ca.sumsqr(self.x[0:3, i + 1] - self.x[0:3, i]) <= stepSize ** 2
-            )
+        #for i in range(self.N - 1):
+        #    self.opti.subject_to(
+        #        ca.sumsqr(self.x[0:3, i + 1] - self.x[0:3, i]) <= stepSize ** 2
+        #    )
 
         # State and actuation constraints
         for i in range(self.N):
@@ -228,13 +226,15 @@ class RRTPathOptimization:
             self.opti.set_initial(self.x[6:10, i], initial_path[i].q)
             self.opti.set_initial(self.x[10:13, i], initial_path[i].w)
 
-            self.opti.set_value(self.startPos[:, i], initial_path[i].x)
+            print (f"i {i} - x {initial_path[i].x} - q {initial_path[i].q}")
 
 
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
 
         sol = self.opti.solve_limited()
+        print(f"xi : {self.opti.value(self.x[:, 0])} vs {initial_path[0].x}")
+        print(f"xf : {self.opti.value(self.x[:, -1])} vs {initial_path[-1].x}")
         return sol
     def f_numpy(self, state: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
         """
@@ -379,9 +379,14 @@ class RRTPathOptimization:
 
         if obstacles is not None:
             for obs in obstacles:
-                square = obs.generateSquare()
-                faces = np.array([[4, 0, 1, 2, 3]])  # single quad face
-                surf = pv.PolyData(square.T, faces)
+                cube = obs.generateCube()
+                faces = np.array([[4, 0, 1, 2, 3],
+                              [4, 4, 5, 6, 7],
+                              [4, 0, 1, 5, 4],
+                              [4, 2, 3, 7, 6],
+                              [4, 0, 3, 7, 4],
+                              [4, 1, 2, 6, 5]])
+                surf = pv.PolyData(cube.T, faces=faces)
                 plotter.add_mesh(surf, color="yellow", opacity=0.3, style='wireframe')
                 plotter.add_points(obs.closestPointObstacle, color="orange", point_size=10)
                 plotter.add_arrows(obs.closestPointObstacle[np.newaxis, :],

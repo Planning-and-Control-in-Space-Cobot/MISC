@@ -106,7 +106,7 @@ class Robot(Model):
         return tm.sample.sample_surface_even(self.mesh, count)[0].T
     
 
-    def getObstacles(self, environment : EnvironmentHandler, pos : np.ndarray, R : trf.Rotation, iteration : int, useSampling=True, count=100) -> List[Obstacle]:
+    def getObstacles(self, environment : EnvironmentHandler, pos : np.ndarray, R : trf.Rotation, iteration : int, useSampling=True, count=10) -> List[Obstacle]:
         '''
         Function to compute the collision planes of the robot with the environment
 
@@ -141,6 +141,7 @@ class Robot(Model):
                 distance, pRobot, pEnv = environment.getClosestPoints(obj, pos + R.apply(point), trf.Rotation.from_euler('xyz', [0, 0, 0]).as_quat())
                 normal = pos + R.apply(point) + pRobot - pEnv
                 normal /= np.linalg.norm(normal) # Normalize the normal vector
+                print(f"Point: {point}, pRobot: {pRobot}, pEnv: {pEnv}, Normal: {normal}, Distance: {distance}")
 
                 obstacles.append(Obstacle(pEnv, normal, distance, iteration))
 

@@ -72,7 +72,7 @@ class Obstacle:
         Returns:
         - V (np.ndarray): 3x8 array where each column is a 3D vertex
         """
-        size = self.minDistance + self.safetyMargin
+        size = max(self.minDistance + self.safetyMargin, 5)
         # Find center of cube, offset in the direction *away* from the obstacle
         offset = -self.normal * (size / 2.0)
         center = self.closestPointObstacle + offset

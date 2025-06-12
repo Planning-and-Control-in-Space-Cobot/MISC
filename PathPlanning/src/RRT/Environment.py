@@ -21,6 +21,7 @@ class EnvironmentHandler:
         self.voxel_size = voxel_size
 
         self.pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+        self.pcd = pcd
         pts = np.asarray(self.pcd.points)
         pts -= pts.min(axis=0)
         self.pcd.points = o3d.utility.Vector3dVector(pts)

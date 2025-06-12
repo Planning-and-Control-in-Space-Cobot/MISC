@@ -250,11 +250,13 @@ def main():
     xf = np.zeros(13)
     xi[0:3] = optimizationPath[0].x
     xi[6:10] = optimizationPath[0].q
+    print(f"xi: {xi}")
     xf[0:3] = optimizationPath[-1].x
     xf[6:10] = optimizationPath[-1].q
+    print(f"xf: {xf}")
 
     # get obstacles from the path
-    allObstacles = rrtOpt.setup_optimization(optimizationPath, True, xi, xf)
+    allObstacles = rrtOpt.setup_optimization(optimizationPath, True, xi=xi, xf=xf)
     drawEnvironmentAndObstacles(environment, allObstacles)
 
     prev_u = np.zeros((6, len(optimizationPath)))
