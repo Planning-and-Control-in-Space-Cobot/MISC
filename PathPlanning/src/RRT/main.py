@@ -86,25 +86,6 @@ def drawEnvironmentAndObstacles(environment, obstacles):
     pv_.show()
     
     return pv_
-def createEllipsoidMesh(ellipsoidRadii : np.ndarray = np.array([0.24, 0.24, 0.10])) -> tm.Trimesh:
-    '''
-    Create a trimesh ellipsoid mesh with a given radius in each semi axis.
-
-    Parameters:
-        ellipsoidRadii (np.ndarray): The radii of the ellipsoid in each semi axis.
-    
-    Returns:
-        tm.Trimesh: The trimesh ellipsoid mesh.:w
-
-    '''
-    mesh  = tm.creation.icosphere(
-        subdivisions=3, radius=1.0
-    )
-    radii = ellipsoidRadii.tolist()
-    radii.append(1.0)
-    scaleMatrix = np.diag(radii)
-    mesh.apply_transform(scaleMatrix)
-    return mesh
 
 def main():
     parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
@@ -146,6 +127,14 @@ def main():
         )
     )
     environment = EnvironmentHandler(pcd)
+    #environment._debugPointCloud(#
+
+    print(f"Creating Robot object")
+    A = np.load(os.path.join(script_dir, "A_matrix.npy"))
+    J = np.load(os.path.join(script_dir, "J_matrix.npy"))
+    m = np.load(os.path.join(script_dir, "mass.npy"))
+
+    robot = Robot(J, A, m, environment.buildBox(),  pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06)))
 
 
     if args.considerPayload:
@@ -183,11 +172,7 @@ def main():
         maxPos = np.array([4.0, 6, 10])
         #start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
         #goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
-        robot = environment.buildEllipsoid()
-        robotMesh = pv.ParametricEllipsoid(
-            0.24, 0.24, 0.10, center=(0, 0, 0)
-        )
-        planner = RRTPlanner(environment, robot, robotMesh, payload, payloadMesh, payloadTranslation, payloadOriginalAttitude, posMin=minPos, posMax=maxPos)
+        planner = RRTPlanner(environment, robot.getCollisionGeometry(), robot.getPVMesh(), payload, payloadMesh, payloadTranslation, payloadOriginalAttitude, posMin=minPos, posMax=maxPos)
         path = planner.plan(start, goal)
         if not path.pathEmpty():
             pv_ = path.visualizePath(environment, payload)
@@ -230,16 +215,11 @@ def main():
     if args.onlyRRT:
         return
     
-    print("Running RRT Path Optimization")
-    A = np.load(os.path.join(script_dir, "A_matrix.npy"))
-    J = np.load(os.path.join(script_dir, "J_matrix.npy"))
-    m = np.load(os.path.join(script_dir, "mass.npy"))
-    optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
 
-    robot = Robot(J, A, m, environment.buildEllipsoid(),  createEllipsoidMesh())
     
 
 
+    optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
     #min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
     stateLowerBound = np.array([1.5, 1, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     stateUpperBound = np.array([4, 6, 10, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])

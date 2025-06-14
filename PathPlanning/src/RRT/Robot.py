@@ -18,7 +18,7 @@ from Environment import EnvironmentHandler
 
 
 class Model: 
-    def __init__(self, name :  str, CollisionGeometry : fcl.CollisionGeometry = None, mesh : tm.Trimesh = None):
+    def __init__(self, name :  str, fcl_obj : fcl.CollisionGeometry = None, mesh : tm.Trimesh = None):
         '''
         Base class for a model in the optimization problem, this class will be used to represent the robot dynamics, shape and collision geometry
 
@@ -28,13 +28,32 @@ class Model:
             collisionGeometry (fcl.CollisionGeometry): Collision geometry of the model, this will be used to compute the collision constraints in the optimization problem
             mesh (o2d.geometry.TriangleMesh): Mesh of the model, this will be used to visualize the model in the optimization problem
         '''
-        self.collisionGeometry = None
+        self.fcl_obj = fcl_obj
+        self.mesh = mesh
 
 
     def getCollisionGeometry(self):
         '''
-        Function to get the collision geometry of the model, '''
+        Function to get the collision geometry of the model, 
+        '''
+        return self.fcl_obj
     
+    def getMesh(self):
+        '''
+        Function to get the mesh of the model, this will be used to visualize the model in the optimization problem
+        '''
+        return self.mesh
+    
+
+    @abstractmethod
+    def getPVMesh(self):
+        '''
+        Function to get the mesh of the model in a format that can be used by pyvista for visualization
+
+        Returns:
+            pv.PolyData: Mesh of the model in a format that can be used by pyvista for visualization
+        '''
+        raise NotImplementedError("This method should be implemented in the subclass")
 
     @abstractmethod    
     def f(self, state, u, dt):
@@ -161,6 +180,17 @@ class Robot(Model):
             normal = pRobot - pEnv 
             normal /= np.linalg.norm(normal)
             return [Obstacle(pEnv, normal, distance, iteration)] 
+
+    @override
+    def getPVMesh(self):
+        '''
+        Function to get the mesh of the robot in a format that can be used by pyvista for visualization
+
+        Returns:
+            pv.PolyData: Mesh of the robot in a format that can be used by pyvista for visualization
+        '''
+        return self.mesh
+
 
     @override
     def f(self, state, u, dt):

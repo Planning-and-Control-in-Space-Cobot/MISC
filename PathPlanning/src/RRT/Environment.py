@@ -3,10 +3,11 @@ import open3d as o3d
 import numpy as np
 import scipy.spatial.transform as trf
 import pyvista as pv
+import time
 
 
 class EnvironmentHandler:
-    def __init__(self, pcd, voxel_size=0.1):
+    def __init__(self, pcd, voxel_size=0.01):
         """
         Receives a point cloud and a voxel size, and builds a voxel grid that is
         compatible with fcl for colision detection.
@@ -19,8 +20,6 @@ class EnvironmentHandler:
             None
         """
         self.voxel_size = voxel_size
-
-        self.pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
         self.pcd = pcd
         pts = np.asarray(self.pcd.points)
         pts -= pts.min(axis=0)
@@ -36,9 +35,14 @@ class EnvironmentHandler:
         self.fcl_env = self._build_voxel_fcl()
 
     def _fast_voxel_mesh(self, voxel_grid):
+        import time
+        timeStart = time.time()
+
         voxel_size = voxel_grid.voxel_size
         origin = voxel_grid.origin
         voxels = voxel_grid.get_voxels()
+
+        # Get centers
         centers = (
             np.array([v.grid_index for v in voxels]) * voxel_size
             + origin
@@ -47,6 +51,7 @@ class EnvironmentHandler:
         min_bounds = centers.min(axis=0)
         centers -= min_bounds
 
+        # Cube corners: (8, 3)
         cube = (
             np.array(
                 [
@@ -63,6 +68,7 @@ class EnvironmentHandler:
             - 0.5
         ) * voxel_size
 
+        # Faces template: (6, 4)
         faces_template = np.array(
             [
                 [0, 1, 2, 3],
@@ -74,29 +80,41 @@ class EnvironmentHandler:
             ]
         )
 
-        all_pts, all_faces, offset = [], [], 0
-        for c in centers:
-            pts = cube + c
-            all_pts.append(pts)
-            all_faces.append(faces_template + offset)
-            offset += 8
+        # Vectorized vertices: repeat centers, tile cube
+        N = centers.shape[0]
+        points = (
+            np.repeat(centers, 8, axis=0) + np.tile(cube, (N, 1))
+        )  # (N*8, 3)
 
-        points = np.vstack(all_pts)
-        quads = np.vstack(all_faces)
-        tris = []
-        for quad in quads:
-            tris.append([3, quad[0], quad[1], quad[2]])
-            tris.append([3, quad[0], quad[2], quad[3]])
-        tris = np.array(tris, dtype=np.int32).flatten()
-        return pv.PolyData(points, tris), points, quads
+        # Vectorized faces: replicate faces_template with correct offsets
+        offsets = (np.arange(N) * 8).reshape(-1, 1, 1)  # (N, 1, 1)
+        faces = faces_template[None, :, :] + offsets  # (N, 6, 4)
+        quads = faces.reshape(-1, 4)  # (N*6, 4)
+
+        # Convert quads to triangle list for PolyData: each quad → 2 triangles
+        tris = np.empty((len(quads) * 2, 4), dtype=np.int32)  # Each face: [3, i, j, k]
+
+        tris[0::2, 0] = 3
+        tris[0::2, 1:] = quads[:, [0, 1, 2]]
+
+        tris[1::2, 0] = 3
+        tris[1::2, 1:] = quads[:, [0, 2, 3]]
+
+        tris_flat = tris.flatten()
+
+        # Return PyVista mesh + raw data
+        print(f"Voxel grid was build in {time.time() - timeStart} seconds")
+        return pv.PolyData(points, tris_flat), points, quads
 
     def _build_voxel_fcl(self):
+        timeStart = time.time()
         model = fcl.BVHModel()
         model.beginModel(len(self.vertices), len(self.triangle_faces))
         model.addSubModel(
             self.vertices.astype(np.float32), self.triangle_faces.astype(np.int32)
         )
         model.endModel()
+        print(f"Voxel grid was converted to fcl in {time.time() - timeStart} seconds")
         return fcl.CollisionObject(model)
 
     def buildEllipsoid(
@@ -128,7 +146,7 @@ class EnvironmentHandler:
 
         return fcl.CollisionObject(shape, tf)
 
-    def buildBox(self, box_size : np.ndarray = np.array([0.24, 0.24, 0.24])):
+    def buildBox(self, box_size : np.ndarray = np.array([0.45, 0.45, 0.12])):
         '''
         Creates a box to encompass an object for the collision detection.
 
@@ -358,3 +376,29 @@ class EnvironmentHandler:
             pv.PolyData: voxel mesh of the environment
         """
         return self.voxel_mesh
+    
+    def _debugPointCloud(self):
+        '''
+        Visualized the point cloud as the voxel grid built from it to ensure the discretization is correct and not too coarse.
+
+        Args: 
+            None
+
+        Returns:
+            None
+        '''
+        # Mesh handling
+
+        pv_ = pv.Plotter()
+        #pv_.add_mesh(pv.PolyData(np.asarray(self.pcd.points)), color="blue", point_size=4, render_points_as_spheres=True)
+        pv_.add_mesh(self.voxel_mesh, color="white", show_edges=True, opacity=0.5)
+        print(f"Voxel grid has {len(self.voxel_grid.get_voxels())} voxels")
+        pv_.show_grid()
+        pv_.add_legend(
+            [
+                ("Point Cloud", "blue"),
+                ("Voxel Grid", "white"),
+            ],
+            loc="upper left",
+        )
+        pv_.show()
