@@ -1,65 +1,63 @@
-import casadi as ca 
+import casadi as ca
 import spatial_casadi as sc
 
-import trimesh as tm 
-import open3d as o3d
+import trimesh as tm
 import numpy as np
-import fcl
+
+import coal
+
+import pyvista as pv
 
 import scipy.spatial.transform as trf
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-from typing import Any, Dict, Optional, Union, TypeVar, List
-_T = TypeVar('_T', bound='Model')
+from typing import TypeVar, List
+
+_T = TypeVar("_T", bound="Model")
 from typing_extensions import override
 
 from Obstacle import Obstacle
 from Environment import EnvironmentHandler
 
 
-class Model: 
-    def __init__(self, name :  str, fcl_obj : fcl.CollisionGeometry = None, mesh : tm.Trimesh = None):
-        '''
-        Base class for a model in the optimization problem, this class will be used to represent the robot dynamics, shape and collision geometry
+class Model:
+    def __init__(
+        self,
+        name: str,
+        fcl_obj: coal.CollisionGeometry = None,
+        mesh: pv.PolyData = None,
+    ):
+        """Base class for a model in the optimization problem, this class will be used to represent the robot dynamics, shape and collision geometry
 
         The init function of the model may be overloaded if necessary
         Parameters
             name (str): Name of the model
             collisionGeometry (fcl.CollisionGeometry): Collision geometry of the model, this will be used to compute the collision constraints in the optimization problem
             mesh (o2d.geometry.TriangleMesh): Mesh of the model, this will be used to visualize the model in the optimization problem
-        '''
+        """
         self.fcl_obj = fcl_obj
         self.mesh = mesh
 
-
     def getCollisionGeometry(self):
-        '''
-        Function to get the collision geometry of the model, 
-        '''
+        """Function to get the collision geometry of the model,"""
         return self.fcl_obj
-    
+
     def getMesh(self):
-        '''
-        Function to get the mesh of the model, this will be used to visualize the model in the optimization problem
-        '''
+        """Function to get the mesh of the model, this will be used to visualize the model in the optimization problem"""
         return self.mesh
-    
 
     @abstractmethod
     def getPVMesh(self):
-        '''
-        Function to get the mesh of the model in a format that can be used by pyvista for visualization
+        """Function to get the mesh of the model in a format that can be used by pyvista for visualization
 
         Returns:
             pv.PolyData: Mesh of the model in a format that can be used by pyvista for visualization
-        '''
+        """
         raise NotImplementedError("This method should be implemented in the subclass")
 
-    @abstractmethod    
+    @abstractmethod
     def f(self, state, u, dt):
-        '''
-        Function to compute the next state of the Model given the current state, control inputs and time step
-
+        """Function to compute the next state of the Model given the current state, control inputs and time step
 
         Parameters
             state (np.ndarray): current state of the model
@@ -67,32 +65,41 @@ class Model:
             dt (float): time step
         Returns
             np.ndarray: next state of the model
-        '''
-        raise NotImplementedError("This method should be implemented in the subclass")    
+        """
+        raise NotImplementedError("This method should be implemented in the subclass")
+
 
 class Robot(Model):
+    """This class derives from the Model class and will represent the Space Cobot Robot in the optimization process.
+
+    The Space Cobot Robot is a 6 DoF robot with an ellipsoid shaped body, nevertheless, for simplicity in the optimization problem, we will represent the robot with a rectangular body, since this is a convex hull an allows for easy half plane obstacle avoidance constraints, such as the ones we want to use xn >= a;
+
+    The robot can be contained in a 0.45m x 0.45m x 0.12m rectangular box, as the one used.
+
+    """
+
     @override
     def __init__(
-        self, J: np.ndarray, A: np.ndarray, m: float, fcl_obj : fcl.CollisionGeometry, mesh : tm.Trimesh
+        self,
+        J: np.ndarray,
+        A: np.ndarray,
+        m: float,
+        fcl_obj: coal.CollisionGeometry,
+        mesh: tm.Trimesh,
     ):
-        """
-        Robot class to represent the robot in the optimization problem
+        """Robot class to represent the robot in the optimization problem
 
         Parameters
             J (np.ndarray): inertia matrix of the robot
             A (np.ndarray): actuation matrix of the robot
             m (float): mass of the robot
             fcl_obj (fcl.CollisionGeometry) : collision geometry of the robot, this might be used to compute the collision constraints of the robot.
-            mesh (tm.Trimesh): mesh 
+            mesh (tm.Trimesh): mesh
 
-        Returns
+        Returns:
             None
         """
-        if (
-            np.shape(J) != (3, 3)
-            or np.shape(A) != (6, 6)
-            or m <= 0
-        ):
+        if np.shape(J) != (3, 3) or np.shape(A) != (6, 6) or m <= 0:
             raise ValueError(
                 "J must be a 3x3 matrix, A must be a 6x6 matrix, ellipsoid_radius must be a 3x1 vector and m must be a positive scalar"
             )
@@ -102,99 +109,156 @@ class Robot(Model):
         self.m = m
         self.fcl_obj = fcl_obj
         self.mesh = mesh
-        
-    def uniformSurfaceSample(self, count : int = 100) -> np.ndarray:
-        '''
-        Function to sample points uniformly on the surface of the robot mesh
 
-        Parameters
-            count (int): number of points to sample on the surface of the robot mesh, default is 100
-
-        Returns
-            np.ndarray: 3xN array of points sampled uniformly on the surface of the robot mesh. Robot is assumed to be centered at the origin, so the point is also the translation from the center of the robot to the point.
-        '''
-        if self.mesh is None:
-            raise ValueError("Mesh is not defined for the robot")
-        
-        if not isinstance(self.mesh, tm.Trimesh):
-            raise TypeError("Mesh must be a trimesh object")
-        
-        if count <= 0:
-            raise ValueError("Count must be a positive integer")
-            
-        return tm.sample.sample_surface_even(self.mesh, count)[0].T
-    
-
-    def getObstacles(self, environment : EnvironmentHandler, pos : np.ndarray, R : trf.Rotation, iteration : int, useSampling=True, count=10) -> List[Obstacle]:
-        '''
-        Function to compute the collision planes of the robot with the environment
-
-        If useSampling is True, we will sample multiple points on the surface of the robot mesh, and returns a list of the planes that are generated from these points.
-        Take into consideration that we will remove planes that are equivalent across multiple points, meaning that the number of planes returns may be smaller than the number of sampled points.
-
-        If useSampling is set to False, we will only compute the closest obstacle to the robot, this may not be representative for close collisions.
+    def getObstacles(
+        self,
+        environment: EnvironmentHandler,
+        pos: np.ndarray,
+        R: trf.Rotation,
+        iteration: int,
+    ) -> List[Obstacle]:
+        """Function to compute the collision planes of the robot with the environment
 
         Parameters
             environment (EnvironmentHandler): Environment handler object that contains the environment information
             pos (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
             R (trf.Rotation): quaternion of the robot in the environment, this is the rotation from the center of the robot to the closest point in the robot
             iteration (int) : iteration on the path that the obstacles returns should be considered
-            useSampling (bool): whether to use sampling or not, default is True
             count (int): number of points to sample on the surface of the robot mesh, default is 100
-        
-        Returns
+
+        Returns:
             List[Obstacle]: list of Obstacle objects representing the collision planes of the robot with the environment
 
-        '''
+        """
         if not isinstance(environment, EnvironmentHandler):
             raise TypeError("Environment must be an instance of EnvironmentHandler")
-    
-        if useSampling:
-            points = self.uniformSurfaceSample(count)
-            obj = environment.buildSinglePoint() # Collision object representation of the point
-            obstacles = []
-            for point in points.T:
-                # ! STRANGE BEHAVIOR:
-                # ! FOR A SPHERE THE pRobot IS ASSUMING THE ROBOT IS CENTERED AT THE ORIGIN, BUT THE MATH FROM FCL DOES NOT CONSIDER THE ROBOT AT THE ORIGIN, BUT RATHER AT THE CORRECT POSITION, SOME DIFFERENCE IN FRAMES IS HAPPENING, EVEN THO IT IS THE SAME METHOD!!!!
+        vertices = (R.as_matrix() @ self.getVertices().T + pos.copy().reshape((3, 1))).T
+        point = environment.buildSinglePoint()
 
-                distance, pRobot, pEnv = environment.getClosestPoints(obj, pos + R.apply(point), trf.Rotation.from_euler('xyz', [0, 0, 0]).as_quat())
-                normal = pos + R.apply(point) + pRobot - pEnv
-                normal /= np.linalg.norm(normal) # Normalize the normal vector
-                print(f"Point: {point}, pRobot: {pRobot}, pEnv: {pEnv}, Normal: {normal}, Distance: {distance}")
+        obstacles = []
 
-                obstacles.append(Obstacle(pEnv, normal, distance, iteration))
+        maxDistance = -np.inf
 
-            filteredObstacles = []
-            np.set_printoptions(precision=3, suppress=True)
-            for obs in obstacles:
-                print(f"Norm: {obs.normal}, Distance: {obs.minDistance}")
-                if not any(np.allclose(obs.normal, filteredObs.normal, atol=1e-1) for filteredObs in filteredObstacles):
-                    filteredObstacles.append(obs) 
-            print(f"Number of obstacles: {len(filteredObstacles)} vs len(obstacles): {len(obstacles)}")
-            for obs in filteredObstacles:
-                print(f"Obstacle: {obs.closestPointObstacle}, Normal: {obs.normal}, Distance: {obs.minDistance}, Iteration: {obs.iteration}")
-            return filteredObstacles
-        else:
-            # Only compute the closest obstacles to the robot
-            distance, pRobot, pEnv = environment.getClosestPoints(self.fcl_obj, pos, R.as_quat())
-            normal = pRobot - pEnv 
-            normal /= np.linalg.norm(normal)
-            return [Obstacle(pEnv, normal, distance, iteration)] 
+        collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
+
+        if collision:
+            pass
+
+        for v in vertices:
+            try:
+                minDistance, pt1, pt2, _ = environment.distance(
+                    point,
+                    v,
+                    trf.Rotation.from_euler("xyz", [0, 0, 0]),
+                )
+            except (TypeError, ValueError) as e:
+                print(f"Some error occurred: {e}")
+                return []
+
+            obstacles.append(
+                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, iteration, v)
+            )
+            maxDistance = max(maxDistance, minDistance)
+        filteredObstacles = []
+        for obs in obstacles:
+            newObstacle = True
+            for fobs in filteredObstacles:
+                if np.all(obs.normal == fobs.normal) and obs.normal @ obs.closestPointObstacle == fobs.normal @ fobs.closestPointObstacle:
+                    newObstacle = False
+            if newObstacle:
+                filteredObstacles.append(obs)
+            
+        return filteredObstacles, maxDistance
 
     @override
     def getPVMesh(self):
-        '''
-        Function to get the mesh of the robot in a format that can be used by pyvista for visualization
+        """Function to get the mesh of the robot in a format that can be used by pyvista for visualization
 
         Returns:
             pv.PolyData: Mesh of the robot in a format that can be used by pyvista for visualization
-        '''
+        """
         return self.mesh
 
+    def getPVMesh(self, pos: np.ndarray, R: trf.Rotation) -> pv.PolyData:
+        """Function to get the mesh of the robot in a format that can be used by pyvista for visualization, given the position and rotation of the robot
+
+        Parameters
+            pos (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
+            R (trf.Rotation): quaternion of the robot in the environment, this is the rotation from the center of the robot to the closest point in the robot
+
+        Returns:
+            pv.PolyData: Mesh of the robot in a format that can be used by pyvista for visualization
+        """
+        T = np.eye(4)
+        T [:3, :3] = R.as_matrix()
+        T[:3, 3] = pos
+        m_ = self.mesh.copy()
+        m_.transform(T)
+        return m_
+
+
+    def getVertices(self) -> np.ndarray:
+        """Returns the vertices of the box containing the robot, when the robot is represented as a rectangular box, that is centered with the origin and axis aligned with the axes.
+
+        Parameters
+            None
+
+        Returns:
+            np.ndarray: 3x8 array with the vertices of the box containing the robot, each column is a vertex in 3D space
+        """
+        return np.array(
+            [
+                [-0.225, -0.225, -0.06],
+                [0.225, -0.225, -0.06],
+                [0.225, 0.225, -0.06],
+                [-0.225, 0.225, -0.06],
+                [-0.225, -0.225, 0.06],
+                [0.225, -0.225, 0.06],
+                [0.225, 0.225, 0.06],
+                [-0.225, 0.225, 0.06],
+            ]
+        )
 
     @override
     def f(self, state, u, dt):
+        '''
+        Computes the next state of the robot given the current state.
+
+        Taking into account the robot's dynamics, the current state, control 
+        inputs, and the time step, this function computes the next state of the 
+        robot. This function works with casadi variables and not numpy arrays, 
+        since this is to be used inside an optimization problem and not for a
+        simulation directly.
+
+        Parameters:
+            state (ca.MX): Current state of the robot, which includes position, 
+                velocity, quaternion and angular velocity. 13x1 vector.
+            u (ca.MX): Control inputs for the robot. 6x1 vector.
+            dt (float): Time step for the state update.
+
+        Returns:
+            ca.MX: Next state of the robot, which includes position, velocity,
+                quaternion and angular velocity. 13x1 vector.
+        '''        
         def unflat(state, u):
+            '''
+            Unflattens the state and control inputs vectors
+
+            Unflattens the state vector and the control input vector into the 
+            respective components: position, velocity, quaternion, angular
+            velocity, force, and moment.
+
+
+            Parameters:
+                state (ca.MX): Current state of the robot, which includes
+                    position, velocity, quaternion and angular velocity. 13x1 vector.
+                u (ca.MX): Control inputs for the robot. 6x1 vector.
+            
+            Returns:
+                tuple: A tuple containing the position (x), velocity (v),
+                quaternion (q), angular velocity (w), force (F), and moment (M)
+                of the robot.
+            '''
             x = state[0:3]
             v = state[3:6]
             q = state[6:10]
@@ -202,10 +266,40 @@ class Robot(Model):
             return x, v, q, w, self.A[0:3, :] @ u, self.A[3:6, :] @ u
 
         def flat(x, v, q, w):
+            '''
+            Flattens the state variables into a single vector
 
+            Flattens the position, velocity, quaternion, and angular velocity
+            vectors into a single vector representing the state of the robot.
+
+            Parameters:
+                x (ca.MX): Position vector of the robot. 3x1 vector.
+                v (ca.MX): Velocity vector of the robot. 3x1 vector.
+                q (ca.MX): Quaternion representing the orientation of the robot. 4x1
+                vector.
+                w (ca.MX): Angular velocity vector of the robot. 3x1 vector
+            
+            Returns:
+                ca.MX: A single vector containing the flattened state of the robot,
+                which includes position, velocity, quaternion, and angular velocity.
+            '''
             return ca.vertcat(x, v, q, w)
 
         def quat_mul(q1, q2):
+            '''
+            Multiplies two quaternions
+
+            Multiplies two quaternions q1 and q2 using the quaternion 
+            multiplication method described into 
+            "Indirect Kalman Filter for 3D Attitude Estimation" 
+
+            Parameters:
+                q1 (ca.MX): First quaternion to be multiplied. 4x1 vector
+                q2 (ca.MX): Second quaternion to be multiplied. 4x1 vector
+
+            Returns:
+                ca.MX: The resulting quaternion after multiplying q1 and q2.
+            '''
             q1x, q1y, q1z, q1w = q1[0], q1[1], q1[2], q1[3]
             q2x, q2y, q2z, q2w = q2[0], q2[1], q2[2], q2[3]
             q_ = ca.vertcat(
@@ -217,6 +311,23 @@ class Robot(Model):
             return q_ @ ca.vertcat(q2x, q2y, q2z, q2w)
 
         def quat_int(q, w, dt):
+            '''
+            Integration of a quaternion using angular velocity
+
+            Integrates the quaternion q, considering the angular velocity and 
+            time step dt using the method described in 
+            "Indirect Kalman Filter for 3D Attitude Estimation"
+
+            Parameters:
+                q (ca.MX): Current quaternion representing the orientation of the robot. 4x
+                vector.
+                w (ca.MX): Angular velocity vector of the robot. 3x1 vector
+                dt (float): Time step for the integration.
+            
+            Returns:
+                ca.MX: The resulting quaternion after integrating the angular
+                velocity over the time step dt.
+            '''
             w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
             q_ = ca.vertcat(
                 w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)

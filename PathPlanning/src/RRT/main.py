@@ -5,7 +5,9 @@ import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
 import pickle
-import trimesh as tm
+
+from colorama import Fore, Style
+
 
 # Add the executable directory to the system path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,21 +15,32 @@ sys.path.append(script_dir)
 
 from RRT import RRTPlanner3D as RRTPlanner, RRTState
 
-from Environment import EnvironmentHandler 
-from RRTOptimization import Robot, RRTPathOptimization, Obstacle, OptimizationState
+from Environment import EnvironmentHandler
+from RRTOptimization import (
+    Robot,
+    RRTPathOptimization,
+    Obstacle,
+    OptimizationState,
+)
 
-from time import sleep
-
-import matplotlib.pyplot as mplt
 
 import argparse
 
+
 def createPyBox(axis):
-    """
-    Create a PyVista box mesh with the given axis.
-    """
-    box = pv.Box(bounds=(-axis[0]/2, axis[0]/2, -axis[1]/2, axis[1]/2, -axis[2]/2, axis[2]/2))
+    """Create a PyVista box mesh with the given axis."""
+    box = pv.Box(
+        bounds=(
+            -axis[0] / 2,
+            axis[0] / 2,
+            -axis[1] / 2,
+            axis[1] / 2,
+            -axis[2] / 2,
+            axis[2] / 2,
+        )
+    )
     return box
+
 
 def drawEnvironmentAndNormals(robot, environment, path):
     obstacles = []
@@ -36,12 +49,12 @@ def drawEnvironmentAndNormals(robot, environment, path):
         q = p.q
         R = trf.Rotation.from_quat(q)
         if environment.numCollisions(robot.fcl_obj, x, q) > 0:
-            return None 
+            return None
 
         _, p_obj, p_env = environment.getClosestPoints(robot.fcl_obj, x, q)
         translation = p_obj - x
         translation = R.as_matrix().T @ translation
-        obstacle = Obstacle(p_obj, p_env, translation, i) 
+        obstacle = Obstacle(p_obj, p_env, translation, i)
         obstacles.append(obstacle)
 
     newNormal = []
@@ -56,39 +69,59 @@ def drawEnvironmentAndNormals(robot, environment, path):
                 print(f"Equal Normal found {normal} {obs.normal}")
                 append = False
                 break
-        if  append:
+        if append:
             newNormal.append((obs.normal, obs.closestPointObstacle))
-    print(f"len(obstacles) vs len(newNormal): {len(obstacles)} {len(newNormal)}") 
+    print(
+        f"len(obstacles) vs len(newNormal): {len(obstacles)} {len(newNormal)}"
+    )
     pv_ = pv.Plotter()
     pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1)
     for normal, point in newNormal:
         pv_.add_arrows(point, normal, mag=0.3, color="orange")
     pv_.show()
 
+
 def drawEnvironmentAndObstacles(environment, obstacles):
-    '''
-    Draws the environment and the obstacles in a PyVista plotter.
-    
+    """Draws the environment and the obstacles in a PyVista plotter.
+
     Parameters:
         environment (EnvironmentHandler): The environment handler containing the voxel mesh.
         obstacles (list[Obstacle]): List of obstacles to be visualized.
-    
+
     Returns:
         pv.Plotter: The PyVista plotter with the environment and obstacles.
-    '''
+    """
     pv_ = pv.Plotter()
     pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
-    
+
     for obs in obstacles:
         pos = obs.closestPointObstacle
         normal = obs.normal
         pv_.add_arrows(pos, normal, mag=0.3, color="orange")
     pv_.show()
-    
+
     return pv_
 
+def computeObstacles(environment, robot, path):
+    obstacles = []
+    maxDistances = []
+
+    for i, p in enumerate(path):
+        x = p.x
+        q = p.q
+        R = trf.Rotation.from_quat(q)
+        _obstacles, _maxDistance = robot.getObstacles(
+            environment, x, R, i
+        )
+        obstacles.extend(_obstacles)
+        maxDistances.append(_maxDistance)
+
+    return obstacles, maxDistances
+
 def main():
-    parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
+    parser = argparse.ArgumentParser(
+        description="RRT Path Planning and Optimization"
+    )
 
     def str2bool(v):
         if isinstance(v, bool):
@@ -100,46 +133,92 @@ def main():
         else:
             raise argparse.ArgumentTypeError("Boolean value expected.")
 
-    parser = argparse.ArgumentParser(description="RRT Path Planning and Optimization")
+    parser = argparse.ArgumentParser(
+        description="RRT Path Planning and Optimization"
+    )
 
-    parser.add_argument("--useSavedPath", "-s", type=str2bool, default=True, help="Use a saved path if it exists")
-    parser.add_argument("--onlyRRT", "-r", type=str2bool, default=False, help="Only run RRT without optimization considerations, path will be saved as 'path.pkl'")
-    parser.add_argument("--considerPayload", "-cp", type=str2bool, default=False, help="Consider payload during planning")
-    parser.add_argument("--payloadData", "-pd", type=str, default="payloadData.npz", help="Path to the payload data file")
-    parser.add_argument("--map", "-m", type=str, default="map.pcd", help="Path to the point cloud map file")
+    parser.add_argument(
+        "--useSavedPath",
+        "-s",
+        type=str2bool,
+        default=True,
+        help="Use a saved path if it exists",
+    )
+    parser.add_argument(
+        "--onlyRRT",
+        "-r",
+        type=str2bool,
+        default=False,
+        help="Only run RRT without optimization considerations, path will be saved as 'path.pkl'",
+    )
+    parser.add_argument(
+        "--considerPayload",
+        "-cp",
+        type=str2bool,
+        default=False,
+        help="Consider payload during planning",
+    )
+    parser.add_argument(
+        "--payloadData",
+        "-pd",
+        type=str,
+        default="payloadData.npz",
+        help="Path to the payload data file",
+    )
+    parser.add_argument(
+        "--map",
+        "-m",
+        type=str,
+        default="map.pcd",
+        help="Path to the point cloud map file",
+    )
 
     args = parser.parse_args()
 
-    if args.useSavedPath and not os.path.exists(os.path.join(script_dir, "path.pkl")):
+    if args.useSavedPath and not os.path.exists(
+        os.path.join(script_dir, "path.pkl")
+    ):
         raise ValueError("Path file does not exist, so it cannot be used")
-    
-    
-    if args.onlyRRT and args.useSavedPath:
-        raise ValueError("Cannot use saved path in only RRT mode. Please run without --useSavedPath or with --onlyRRT set to false")
-    
-    if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)):
-        file = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
-        raise ValueError(f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file.")
 
-    pcd = o3d.io.read_point_cloud(
-        os.path.join(
+    if args.onlyRRT and args.useSavedPath:
+        raise ValueError(
+            "Cannot use saved path in only RRT mode. Please run without --useSavedPath or with --onlyRRT set to false"
+        )
+
+    if not os.path.exists(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
+    ):
+        file = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), args.map
         )
+        raise ValueError(
+            f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file."
+        )
+
+    pcd = o3d.io.read_point_cloud(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
     )
     environment = EnvironmentHandler(pcd)
-    #environment._debugPointCloud(#
+    # environment._debugPointCloud(#
 
-    print(f"Creating Robot object")
+    print("Creating Robot object")
     A = np.load(os.path.join(script_dir, "A_matrix.npy"))
     J = np.load(os.path.join(script_dir, "J_matrix.npy"))
     m = np.load(os.path.join(script_dir, "mass.npy"))
 
-    robot = Robot(J, A, m, environment.buildBox(),  pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06)))
-
+    robot = Robot(
+        J,
+        A,
+        m,
+        environment.buildBox(),
+        pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06)),
+    )
 
     if args.considerPayload:
         if not os.path.exists(os.path.join(script_dir, args.payloadData)):
-            raise ValueError(f"Payload data file '{args.payloadData}' does not exist")
+            raise ValueError(
+                f"Payload data file '{args.payloadData}' does not exist"
+            )
         else:
             with open(os.path.join(script_dir, args.payloadData), "rb") as f:
                 payload_data = np.load(f)
@@ -147,12 +226,14 @@ def main():
                 payloadMass = payload_data["payloadMass"]
                 payloadInertia = payload_data["payloadInertia"]
                 payloadTranslation = payload_data["payloadTranslation"]
-                payloadOriginalAttitude = payload_data["payloadOriginalAttitude"]
+                payloadOriginalAttitude = payload_data[
+                    "payloadOriginalAttitude"
+                ]
                 payload = environment.buildBox(payloadSides)
                 payloadMesh = createPyBox(payloadSides)
             print(f"Payload data loaded from {args.payloadData}")
     else:
-        payload = None   
+        payload = None
         payloadTranslation = np.zeros(3)
         payloadOriginalAttitude = np.array([0, 0, 0, 1])
         payloadMesh = None
@@ -165,14 +246,27 @@ def main():
         else:
             print("Considering the payload during the RRT planning")
 
-        
-        start = RRTState(np.array([2.75, 2, 1.0]), np.array([0., 0.707, 0, 0.707]))
-        goal = RRTState(np.array([2.75, 2.0, 7.0]), np.array([0.0, 0.707, 0, 0.707]))
+        start = RRTState(
+            np.array([2.75, 2, 1.0]), np.array([0.0, 0.707, 0, 0.707])
+        )
+        goal = RRTState(
+            np.array([2.75, 2.0, 7.0]), np.array([0.0, 0.707, 0, 0.707])
+        )
         minPos = np.array([1.5, 1, 0])
         maxPos = np.array([4.0, 6, 10])
-        #start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
-        #goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
-        planner = RRTPlanner(environment, robot.getCollisionGeometry(), robot.getPVMesh(), payload, payloadMesh, payloadTranslation, payloadOriginalAttitude, posMin=minPos, posMax=maxPos)
+        # start = RRTState(np.array([0, -3, 1.0]), np.array([0, 0, 0, 1]))
+        # goal = RRTState(np.array([20.0, 15.0, 1.0]), np.array([0, 0, 0, 1]))
+        planner = RRTPlanner(
+            environment,
+            robot.getCollisionGeometry(),
+            robot.getPVMesh(),
+            payload,
+            payloadMesh,
+            payloadTranslation,
+            payloadOriginalAttitude,
+            posMin=minPos,
+            posMax=maxPos,
+        )
         path = planner.plan(start, goal)
         if not path.pathEmpty():
             pv_ = path.visualizePath(environment, payload)
@@ -188,8 +282,7 @@ def main():
                 return
 
             pv_ = pv.Plotter()
-            pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1)
-
+            pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.5)
 
             for state in tree_start:
                 print(f"State {state.i}: pos={state.x}, quat={state.q}")
@@ -211,21 +304,21 @@ def main():
         with open(os.path.join(script_dir, "path.pkl"), "rb") as f:
             path = pickle.load(f)
         print(f"Loaded path with {len(path.states)} states from 'path.pkl'")
-    
+
     if args.onlyRRT:
         return
-    
 
-    
-
-
-    optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
-    #min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
-    stateLowerBound = np.array([1.5, 1, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    initialPath = optimizationPath = [OptimizationState(p.x, p.q) for p in path.states]
+    # min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
+    stateLowerBound = np.array(
+        [1.5, 1, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2]
+    )
     stateUpperBound = np.array([4, 6, 10, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
-    #stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
-    #stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
-    rrtOpt = RRTPathOptimization(stateLowerBound, stateUpperBound, environment, robot)
+    # stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
+    # stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
+    rrtOpt = RRTPathOptimization(
+        stateLowerBound, stateUpperBound, environment, robot
+    )
     xi = np.zeros(13)
     xf = np.zeros(13)
     xi[0:3] = optimizationPath[0].x
@@ -235,40 +328,71 @@ def main():
     xf[6:10] = optimizationPath[-1].q
     print(f"xf: {xf}")
 
-    # get obstacles from the path
-    allObstacles = rrtOpt.setup_optimization(optimizationPath, True, xi=xi, xf=xf)
-    drawEnvironmentAndObstacles(environment, allObstacles)
-
     prev_u = np.zeros((6, len(optimizationPath)))
     dt = 1
 
-    for i in range(1):
-        print(f"Iteration {i}")
-        sol = rrtOpt.optimize(optimizationPath, dt=dt, prev_u=prev_u)
-        #rrtOpt.debug_constraints(sol, obstacles)
-        optimizationPath, prev_u, dt = rrtOpt.getSolution(sol)
-    print("Optimization completed successfully with delta time:", dt)
+    numOptimizationIterations = 30
+    optimizedPaths = []
 
-    for p, u in zip(optimizationPath, prev_u.T):
-        print(f"pos: {p.x}, quat {p.q} vel {p.v} w {p.w},  Control: {u}")
+    obstacles, maxDistances = computeObstacles(
+        environment, robot, optimizationPath
+    )
 
-    initialPath = [OptimizationState(p.x, p.q) for p in path.states]
-    pv_ = rrtOpt.visualize_trajectory(initialPath, optimizationPath, environment.voxel_mesh, allObstacles)
-    for i, o in zip(initialPath, optimizationPath):
-        print(f"i: {i.x} o : {o.x} ")
+    for i in range(numOptimizationIterations):
+        print(f'Num obstacle considered in this step : {len(obstacles)}')
+        rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, xi=xi, xf=xf)
+
+        sol = rrtOpt.optimize(
+            optimizationPath, dt=dt, prev_u=prev_u
+        )
+
+        _optimizationPath, _prev_u, _dt = rrtOpt.getSolution(sol)
+        
+        # Evaluate the trajectory to ensure it is valid
+        anyCollision = False
+        collisionObstacles = []
+        for j, p in enumerate(_optimizationPath):
+            x = p.x
+            q = p.q
+            collision, _, _, nearestPointObstacle, normal = environment.collide(robot.fcl_obj, x, trf.Rotation.from_quat(q))
+
+            if collision:
+                collisionObstacles.append(Obstacle(
+                        nearestPointObstacle, normal, 0, j,
+                ))
+ 
+                anyCollision = True
+
+        if anyCollision:
+            print(f"{Fore.RED} {len(collisionObstacles)} Collision detected in iteration {i}. Recomputing obstacles.{Style.RESET_ALL}")
+            for obs in collisionObstacles:
+                print(
+                    f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
+                )
+            obstacles.extend(collisionObstacles)
+        else:
+            print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
+            optimizationPath = _optimizationPath
+            prev_u = _prev_u
+            dt = _dt
+            obstacles, maxDistances = computeObstacles(
+                environment, robot, optimizationPath
+            )
+        
+        optimizedPaths.append((optimizationPath, prev_u, dt, obstacles))
+    
+
+    pv_ = rrtOpt.visualize_trajectory(
+        initialPath, optimizedPaths[-1][0], environment.voxel_mesh, None, [] 
+    )
     pv_.show()
+        #pv_ = rrtOpt.visualize_trajectory(
+        #    initialPath, optimizationPath, environment.voxel_mesh, allObstacles, collisions
 
+        #)
+        #pv_.show()
 
-
-
-    
-
-
-
-    
-
-
-    '''
+    """
     if path == []:
         return
     path = [OptimizationState(p.x, p.q) for p in path]
@@ -458,9 +582,7 @@ def main():
 
 
     plt.show()
-    '''
-
-    
+    """
 
 
 if __name__ == "__main__":

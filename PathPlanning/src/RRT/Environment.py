@@ -1,19 +1,25 @@
-import fcl
 import open3d as o3d
 import numpy as np
 import scipy.spatial.transform as trf
 import pyvista as pv
 import time
+import coal
 
 
 class EnvironmentHandler:
-    def __init__(self, pcd, voxel_size=0.01):
-        """
-        Receives a point cloud and a voxel size, and builds a voxel grid that is
-        compatible with fcl for colision detection.
+    """Class to handle the environment, which is a voxel grid built from a point
+        cloud.
+    This class is used to convert a point cloud into a mesh that is compatible 
+        with coal for flexible collision detection.
+    """
+    
+    def __init__(self, pcd, voxel_size=0.1):
+        """Receives a point cloud and a voxel size, and builds a voxel grid that
+          is compatible with fcl for colision detection.
 
         Args:
-            pcd (open3d.geometry.PointCloud): point cloud to be converted to voxel grid
+            pcd (open3d.geometry.PointCloud): point cloud to be converted to 
+                voxel grid
             voxel_size (float): size of the voxels in the grid
 
         Returns:
@@ -28,14 +34,36 @@ class EnvironmentHandler:
         self.voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(
             self.pcd, voxel_size=self.voxel_size
         )
-        self.voxel_mesh, self.vertices, self.triangle_faces = self._fast_voxel_mesh(
-            self.voxel_grid
-        )
+        (
+            self.voxel_mesh,
+            self.vertices,
+            self.quads,
+            self.triangleIndex,
+            self.triangleVertex,
+        ) = self._fast_voxel_mesh(self.voxel_grid)
 
-        self.fcl_env = self._build_voxel_fcl()
+        self._build_coal_mesh(self.triangleIndex, self.triangleVertex)
 
     def _fast_voxel_mesh(self, voxel_grid):
-        import time
+        """Builds a Voxel mesh from a voxel grid. This function is fully
+            vectorized and optimized for speed.
+        This function also considers the voxels to be all the same size, as does
+             not join voxels that are adjacent to each other.
+
+        Parameters:
+            voxel_grid (o3d.geometry.VoxelGrid): The voxel grid to convert to a 
+              mesh.
+        
+        Returns:
+            visualization mesh (pyvista.PolyData): The mesh representation of 
+                the voxel grid.
+            points (np.ndarray): The centers of the voxels.
+            quads (np.ndarray): The quad faces of the voxels.
+            triangleIndices (np.ndarray): The indices of the triangles in the 
+                mesh.
+            triangleVertex (np.ndarray): The vertices of the triangles in the 
+                mesh.
+        """
         timeStart = time.time()
 
         voxel_size = voxel_grid.voxel_size
@@ -82,8 +110,8 @@ class EnvironmentHandler:
 
         # Vectorized vertices: repeat centers, tile cube
         N = centers.shape[0]
-        points = (
-            np.repeat(centers, 8, axis=0) + np.tile(cube, (N, 1))
+        points = np.repeat(centers, 8, axis=0) + np.tile(
+            cube, (N, 1)
         )  # (N*8, 3)
 
         # Vectorized faces: replicate faces_template with correct offsets
@@ -92,7 +120,9 @@ class EnvironmentHandler:
         quads = faces.reshape(-1, 4)  # (N*6, 4)
 
         # Convert quads to triangle list for PolyData: each quad → 2 triangles
-        tris = np.empty((len(quads) * 2, 4), dtype=np.int32)  # Each face: [3, i, j, k]
+        tris = np.empty(
+            (len(quads) * 2, 4), dtype=np.int32
+        )  # Each face: [3, i, j, k]
 
         tris[0::2, 0] = 3
         tris[0::2, 1:] = quads[:, [0, 1, 2]]
@@ -102,29 +132,51 @@ class EnvironmentHandler:
 
         tris_flat = tris.flatten()
 
+        triangleIndices = np.empty((len(quads) * 2, 3), dtype=np.int64)
+        triangleIndices[0::2] = quads[:, [0, 1, 2]]
+        triangleIndices[1::2] = quads[:, [0, 2, 3]]
+
         # Return PyVista mesh + raw data
         print(f"Voxel grid was build in {time.time() - timeStart} seconds")
-        return pv.PolyData(points, tris_flat), points, quads
-
-    def _build_voxel_fcl(self):
-        timeStart = time.time()
-        model = fcl.BVHModel()
-        model.beginModel(len(self.vertices), len(self.triangle_faces))
-        model.addSubModel(
-            self.vertices.astype(np.float32), self.triangle_faces.astype(np.int32)
+        return (
+            pv.PolyData(points, tris_flat),
+            points,
+            quads,
+            triangleIndices,
+            points,
         )
-        model.endModel()
-        print(f"Voxel grid was converted to fcl in {time.time() - timeStart} seconds")
-        return fcl.CollisionObject(model)
+
+    def _build_coal_mesh(
+        self, triangleIndex: np.ndarray, triangleVertex: np.ndarray
+    ):
+        """Builds the coal mesh for the environment from the information related
+             to the voxel grid
+
+        Parameters:
+            triangleIndex (np.ndarray): Nx3 Array where each row represents a 
+                triangle, and each column represents a vertex index
+            triangleVertex (np.ndarray): Nx3 Array where each row represents a 
+                vertex in 3D space
+
+        Returns:
+            None
+        """
+        mesh = coal.BVHModelOBBRSS()
+        mesh.beginModel(triangleIndex.shape[0], triangleVertex.shape[0])
+        mesh.addTriangles(triangleIndex)
+        mesh.addVertices(triangleVertex)
+        mesh.endModel()
+        self.envMesh = mesh
 
     def buildEllipsoid(
         self, ellipsoid_radii: np.ndarray = np.array([0.24, 0.24, 0.10])
     ):
-        """
-        Creates an ellipsoid to encompass the robot for the collision detection.
+        """Creates an ellipsoid to encompass the robot for the collision
+            detection.
 
         Args:
-            ellipsoid_radii (np.ndarray): radii of the ellipsoid in x, y, z directions
+            ellipsoid_radii (np.ndarray): radii of the ellipsoid in x, y, z 
+                directions
 
         Returns:
             fcl.CollisionObject: fcl collision object representing the ellipsoid
@@ -139,36 +191,28 @@ class EnvironmentHandler:
         if ellipsoid_radii.shape != (3,):
             raise ValueError("Ellipsoid radii must be a 1D array of length 3.")
 
-        shape = fcl.Ellipsoid(
-            ellipsoid_radii[0], ellipsoid_radii[1], ellipsoid_radii[2]
-        )
-        tf = fcl.Transform(np.eye(3), np.array([0, 0, 0]))
+        return coal.Ellipsoid(ellipsoid_radii)
 
-        return fcl.CollisionObject(shape, tf)
-
-    def buildBox(self, box_size : np.ndarray = np.array([0.45, 0.45, 0.12])):
-        '''
-        Creates a box to encompass an object for the collision detection.
+    def buildBox(self, box_size: np.ndarray = np.array([0.45, 0.45, 0.12])):
+        """Creates a box to encompass an object for the collision detection.
 
         Parameters:
             box_size (np.ndarray): size of the box in x, y, z directions
-            
+
         Returns:
             fcl.CollisionObject: fcl collision object representing the box
-        '''
+        """
         if not isinstance(box_size, np.ndarray):
             raise TypeError("Box size must be a numpy array.")
-        
+
         if box_size.shape != (3,):
             raise ValueError("Box size must be a 1D array of length 3.")
-        
-        shape = fcl.Box(box_size[0], box_size[1], box_size[2])
-        tf = fcl.Transform(np.eye(3), np.array([0, 0, 0]))
-        return fcl.CollisionObject(shape, tf)
+
+        return coal.Box(box_size)
 
     def buildSinglePoint(self):
-        """
-        Creates a single point to encompass the robot for the collision detection.
+        """Creates a single point to encompass the robot for the collision
+            detection.
 
         Args:
             None
@@ -179,195 +223,146 @@ class EnvironmentHandler:
         Raises:
             None
         """
-        shape = fcl.Sphere(0.001)  # Small sphere to represent a point
-        tf = fcl.Transform(np.eye(3), np.array([0, 0, 0]))
+        return coal.Sphere(0.001)
 
-        return fcl.CollisionObject(shape, tf)
-
-    def numCollisions(
+    def collide(
         self,
-        obj1: fcl.CollisionGeometry,
-        p1: np.ndarray = np.zeros((3, 1)),
-        q1: np.ndarray = np.array([0, 0, 0, 1]),
-        obj2: fcl.CollisionGeometry = None,
-        p2: np.ndarray = np.zeros((3, 1)),
-        q2: np.ndarray = np.array([0, 0, 0, 1]),
-    ):
-        """
-        Computes the number of collions between two fcl objects.
+        obj1: coal.CollisionObject,
+        p1: np.ndarray = np.zeros((3,)),
+        q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0]),
+    ):  # type: ignore
+        """Collision between two object and returns the result information.
 
-        By default we receive only one fcl object and its tranform and compute to the generated environemnt
-
-        But a second fcl object and respective transformation can be passed to the function
-        """
-        if obj2 is None:
-            obj2 = self.fcl_env
-
-        rot1 = trf.Rotation.from_quat(q1).as_matrix()
-        tf1 = fcl.Transform(rot1, p1)
-        obj1.setTransform(tf1)
-
-        rot2 = trf.Rotation.from_quat(q2).as_matrix()
-        tf2 = fcl.Transform(rot2, p2)
-        obj2.setTransform(tf2)
-
-        req = fcl.CollisionRequest()
-        res = fcl.CollisionResult()
-
-        ret = fcl.collide(obj1, obj2, req, res)
-
-        return ret
-
-    def getCollisionPoints(
-        self,
-        obj1 : fcl.CollisionGeometry,
-        p1: np.ndarray = np.zeros((3, 1)),
-        q1: np.ndarray = np.array([0, 0, 0, 1]),
-        obj2: fcl.CollisionGeometry = None,
-        p2: np.ndarray = np.zeros((3, 1)),
-        q2: np.ndarray = np.array([0, 0, 0, 1]),
-    ):
-        """
-        Returns the collision points between two fcl objects.
-        By default we receive only one fcl object and its tranform and compute to the generated environemnt
-        Parameters:
-            obj1 (fcl.CollisionObject): first fcl object
-            p1 (np.ndarray): position of the first object
-            q1 (np.ndarray): quaternion of the first object
-            obj2 (fcl.CollisionObject): second fcl object
-            p2 (np.ndarray): position of the second object
-            q2 (np.ndarray): quaternion of the second object
-        Returns:
-            collision_points (list): list of collision points
-        """ 
-        if obj2 is None:
-            obj2 = self.fcl_env
-
-        #print(f"p1 {p1} q1 {q1} p2 {p2} q2 {q2}")
-
-        rot1 = trf.Rotation.from_quat(q1).as_matrix()
-        tf1 = fcl.Transform(rot1, p1)
-        obj1.setTransform(tf1)
-
-        rot2 = trf.Rotation.from_quat(q2).as_matrix()
-        tf2 = fcl.Transform(rot2, p2)
-        obj2.setTransform(tf2)
-
-        req = fcl.CollisionRequest(enable_contact=True)
-        res = fcl.CollisionResult()
-
-        ret = fcl.collide(obj1, obj2, req, res)
-
-        return res.contacts[0].pos if ret else None
-
-    def getClosestPoints(
-        self,
-        obj1: fcl.CollisionGeometry,
-        p1: np.ndarray = np.zeros((3, 1)),
-        q1: np.ndarray = np.array([0, 0, 0, 1]),
-        obj2: fcl.CollisionGeometry = None,
-        p2: np.ndarray = np.zeros((3, 1)),
-        q2: np.ndarray = np.array([0, 0, 0, 1]),
-    ):
-        """
-        Returns the closest point between two fcl objects in both objects as well as the distance between the points.
-
-        By default we receive only one fcl object and its transform and compute to the generated environment
+        The second coal object is the environment mesh that was build from the  
+            point cloud passed to the Environment Handler
 
         Parameters:
-            obj1 (fcl.CollisionObject): first fcl object
+            obj1 (coal.CollisionObject): first coal object
             p1 (np.ndarray): position of the first object
             q1 (np.ndarray): quaternion of the first object
-            obj2 (fcl.CollisionObject): second fcl object
-            p2 (np.ndarray): position of the second object
-            q2 (np.ndarray): quaternion of the second object
 
         Returns:
-            distance (float): Minimum distance between the two objects
-            p_obj1 (np.ndarray): Closest point on the first object
-            p_obj2 (np.ndarray): Closest point on the second object
+            isCollision (bool): True if there is a collision, False otherwise
+            depth (float): depth of the collision if there is a collision, 
+                None otherwise
+            nearestPoint1 (np.ndarray) : nearest point on the object if there 
+                is a collision, None otherwise
+            nearestPoint2 (np.ndarray) : nearest point on the environment mesh 
+                if there is a collision, None otherwise
+            normal (np.ndarray): normal of the collision if there is a 
+                collision, None otherwise
+
+        Raises:
+            TypeError: if obj1 is not a coal.CollisionObject, p1 is not a numpy 
+                array of shape (3, 1), or q1 is not a scipy Rotation object
+            ValueError: if the two objects are in collision
+
         """
+        if not isinstance(p1, np.ndarray) or p1.shape != (3,):
+            raise TypeError("Position must be a numpy array of shape (3).")
 
-        if obj2 is None:
-            obj2 = self.fcl_env
-        rot1 = trf.Rotation.from_quat(q1).as_matrix()
-        tf1 = fcl.Transform(rot1, p1)
-        obj1.setTransform(tf1)
+        if not isinstance(q1, trf.Rotation):
+            raise TypeError("Quaternion must be a scipy Rotation object.")
 
+        T1 = coal.Transform3s()
+        T1.setTranslation(p1)
+        T1.setRotation(q1.as_matrix())
 
-        rot2 = trf.Rotation.from_quat(q2).as_matrix()
-        tf2 = fcl.Transform(rot2, p2)
-        obj2.setTransform(tf2)
+        T2 = coal.Transform3s()
+        T2.setTranslation(np.zeros((3, 1)))
+        T2.setRotation(np.eye(3))
 
-        req = fcl.DistanceRequest(enable_nearest_points=True, enable_signed_distance=True)
-        res = fcl.DistanceResult()
+        colReq = coal.CollisionRequest()
+        colRes = coal.CollisionResult()
 
-        ret = fcl.distance(obj1, obj2, req, res)
-        if res.o1 == obj1:
-            pt1 = res.nearest_points[0]
-            pt2 = res.nearest_points[1]
+        coal.collide(obj1, T1, self.envMesh, T2, colReq, colRes)
+
+        if colRes.isCollision():
+            contact = colRes.getContact(0)
+            depth = contact.penetration_depth
+            nearestPoint1 = contact.getNearestPoint1()
+            nearestPoint2 = contact.getNearestPoint2()
+            normal = contact.normal
+            colRes.clear()
+            return (True, depth, nearestPoint1, nearestPoint2, normal)
         else:
-            pt1 = res.nearest_points[1]
-            pt2 = res.nearest_points[0]
-        
+            colRes.clear()
+            return (False, None, None, None, None)
 
-        return (
-            res.min_distance,
-            pt1, 
-            pt2
-        )
-
-    def getNormalPlane(
+    def distance(
         self,
-        obj1: fcl.CollisionGeometry,
-        p1: np.ndarray = np.zeros((3, 1)),
-        q1: np.ndarray = np.array([0, 0, 0, 1]),
-        obj2: fcl.CollisionGeometry = None,
-        p2: np.ndarray = np.zeros((3, 1)),
-        q2: np.ndarray = np.array([0, 0, 0, 1]),
+        obj1: coal.CollisionGeometry,
+        p1: np.ndarray = np.zeros((3,)),
+        q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0]),
     ):
-        """
-        Returns the normal of the plane of collision between two fcl objects.
-        By default we receive only one fcl object and its tranform and compute to the generated environemnt
+        """Compute the distance between two objects that are not in collision.
+
+        The second coal object is the environment mesh that was built from the
+        point cloud passed to the Environment Handler.
 
         Parameters:
-            obj1 (fcl.CollisionObject): first fcl object
-            p1 (np.ndarray): position of the first object
-            q1 (np.ndarray): quaternion of the first object
-            obj2 (fcl.CollisionObject): second fcl object
-            p2 (np.ndarray): position of the second object
-            q2 (np.ndarray): quaternion of the second object
+            obj1 (coal.CollisionObject): First coal object.
+            p1 (np.ndarray): Position of the first object.
+            q1 (np.ndarray): Quaternion of the first object.
 
         Returns:
-            normal (np.ndarray): normal of the plane of collision
+            minDistance (float): Minimum distance between the two objects.
+            pt1 (np.ndarray): Nearest point on the first object.
+            pt2 (np.ndarray): Nearest point on the second object.
+
+        Raises:
+            ValueError: If the two objects are in collision.
+            TypeError: If obj1 is not a coal.CollisionObject, p1 is not a numpy
+                array of shape (3, 1), or q1 is not a scipy Rotation object.
         """
+        if not isinstance(p1, np.ndarray) or p1.shape != (3,):
+            raise TypeError("Position must be a numpy array of shape (3,).")
 
-        if obj2 is None:
-            obj2 = self.fcl_env
+        if not isinstance(q1, trf.Rotation):
+            raise TypeError("Quaternion must be a scipy Rotation object.")
 
-        if self.numCollisions(obj1, p1, q1, obj2, p2, q2) > 0:
-            return np.zeros(3)
+        isCollision, depth, _, _, _ = self.collide(obj1, p1, q1)
 
-        _, p_ellipsoid, p_plane = self.getClosestPoints(obj1, p1, q1, obj2, p2, q2)
+        #if isCollision:
+        #    print(f"Depth {depth} between objects, cannot compute distance.")
+        #    raise ValueError(
+        #        "Objects are in collision, cannot compute distance."
+        #    )
 
-        return -(p_plane - p_ellipsoid) / np.linalg.norm(p_plane - p_ellipsoid)
+        T1 = coal.Transform3s()
+        T1.setTranslation(p1)
+        T1.setRotation(q1.as_matrix())
 
-    def visualizeMap(self, plotter : pv.Plotter):
-        """
-        Visualizes the voxel grid and the point cloud.
+        T2 = coal.Transform3s()
+        T2.setTranslation(np.zeros((3, 1)))
+        T2.setRotation(np.eye(3))
+
+        distReq = coal.DistanceRequest()
+        distRes = coal.DistanceResult()
+
+        coal.distance(obj1, T1, self.envMesh, T2, distReq, distRes)
+        minDistance = distRes.min_distance
+        pt1 = distRes.getNearestPoint1()
+        pt2 = distRes.getNearestPoint2()
+        normal = distRes.normal
+        distRes.clear()
+        return minDistance, pt1, pt2, normal
+
+    def visualizeMap(self, plotter: pv.Plotter):
+        """Visualizes the voxel grid and the point cloud.
 
         Args:
-            None
+            plotter (pv.Plotter): PyVista plotter object to visualize the voxel
+                grid
 
         Returns:
             None
         """
         plotter.add_mesh(self.voxel_mesh, color="white", show_edges=True)
         return plotter
-    
+
     def getMesh(self):
-        """
-        Returns the voxel mesh of the environment.
+        """Returns the voxel mesh of the environment.
 
         Args:
             None
@@ -376,29 +371,3 @@ class EnvironmentHandler:
             pv.PolyData: voxel mesh of the environment
         """
         return self.voxel_mesh
-    
-    def _debugPointCloud(self):
-        '''
-        Visualized the point cloud as the voxel grid built from it to ensure the discretization is correct and not too coarse.
-
-        Args: 
-            None
-
-        Returns:
-            None
-        '''
-        # Mesh handling
-
-        pv_ = pv.Plotter()
-        #pv_.add_mesh(pv.PolyData(np.asarray(self.pcd.points)), color="blue", point_size=4, render_points_as_spheres=True)
-        pv_.add_mesh(self.voxel_mesh, color="white", show_edges=True, opacity=0.5)
-        print(f"Voxel grid has {len(self.voxel_grid.get_voxels())} voxels")
-        pv_.show_grid()
-        pv_.add_legend(
-            [
-                ("Point Cloud", "blue"),
-                ("Voxel Grid", "white"),
-            ],
-            loc="upper left",
-        )
-        pv_.show()
