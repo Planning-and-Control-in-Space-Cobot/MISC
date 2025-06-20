@@ -23,6 +23,8 @@ from RRTOptimization import (
     OptimizationState,
 )
 
+import time as time
+import matplotlib.pyplot as mplt
 
 import argparse
 
@@ -331,7 +333,7 @@ def main():
     prev_u = np.zeros((6, len(optimizationPath)))
     dt = 1
 
-    numOptimizationIterations = 30
+    numOptimizationIterations = 50
     optimizedPaths = []
 
     obstacles, maxDistances = computeObstacles(
@@ -340,25 +342,30 @@ def main():
 
     for i in range(numOptimizationIterations):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
+        startTime = time.time()
         rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, xi=xi, xf=xf)
 
         sol = rrtOpt.optimize(
             optimizationPath, dt=dt, prev_u=prev_u
         )
+        optimizationTime = time.time() - startTime
 
-        _optimizationPath, _prev_u, _dt = rrtOpt.getSolution(sol)
-        
+        _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
+        print(f"Total Time :  {_dt} seconds, Cost: {cost}")    
         # Evaluate the trajectory to ensure it is valid
         anyCollision = False
         collisionObstacles = []
+        collisionsIteration = []
         for j, p in enumerate(_optimizationPath):
             x = p.x
             q = p.q
-            collision, _, _, nearestPointObstacle, normal = environment.collide(robot.fcl_obj, x, trf.Rotation.from_quat(q))
+            collision, depth, _, nearestPointObstacle, normal = environment.collide(robot.fcl_obj, x, trf.Rotation.from_quat(q))
 
             if collision:
+                print(f"Collision Depth: {depth}")
+                collisionsIteration.append(j)
                 collisionObstacles.append(Obstacle(
-                        nearestPointObstacle, normal, 0, j,
+                    nearestPointObstacle, -normal, 0, j,
                 ))
  
                 anyCollision = True
@@ -369,6 +376,9 @@ def main():
                 print(
                     f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
                 )
+            #rrtOpt.debugTrajectory(
+            #    optimizationPath, _optimizationPath, obstacles, collisionObstacles, environment.voxel_mesh, collisionsIteration
+            #)
             obstacles.extend(collisionObstacles)
         else:
             print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
@@ -378,14 +388,20 @@ def main():
             obstacles, maxDistances = computeObstacles(
                 environment, robot, optimizationPath
             )
-        
-        optimizedPaths.append((optimizationPath, prev_u, dt, obstacles))
-    
+
+        optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
+
 
     pv_ = rrtOpt.visualize_trajectory(
         initialPath, optimizedPaths[-1][0], environment.voxel_mesh, None, [] 
     )
     pv_.show()
+
+    with open(os.path.join(script_dir, "optimizedPath.pkl"), "wb") as f:
+        pickle.dump(optimizedPaths, f)
+    
+    print(f"Optimized path saved to {os.path.join(script_dir, 'optimizedPath.pkl')}")
+
         #pv_ = rrtOpt.visualize_trajectory(
         #    initialPath, optimizationPath, environment.voxel_mesh, allObstacles, collisions
 

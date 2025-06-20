@@ -158,17 +158,17 @@ class RRTPathOptimization:
             )
 
         # Define the cost function
-        cost = 0
-        cost += 100 * self.dt
+        self.cost = 0
+        self.cost += 10000 * self.dt
         for i in range(self.N):
-            cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
+            self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
         for i in range(1, self.N - 1):
-            cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
+            self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
                 self.x[0:3, i] - self.xf[0:3]
             )
 
-        self.opti.minimize(cost)
+        self.opti.minimize(self.cost)
 
         self.opti.solver(
             "ipopt",
@@ -177,7 +177,7 @@ class RRTPathOptimization:
             },
             {
                 "print_level": 0,
-                "max_iter": 200,
+                "max_iter": 100,
                 "warm_start_init_point": "yes",  # Use initial guess
                 "linear_solver": "ma97",
                 "mu_strategy": "adaptive",
@@ -331,13 +331,14 @@ class RRTPathOptimization:
             ):
                 print(f"  x[{i}] out of bounds.")
 
-    def getSolution(self, sol: ca.OptiSol) -> List[OptimizationState]:
+    def getSolution(self, sol: ca.OptiSol):
         if sol is None:
             return []
 
         x = sol.value(self.x)
         u = sol.value(self.u)
         dt = sol.value(self.dt)
+        cost = sol.value(self.cost)
 
         return (
             [
@@ -348,7 +349,67 @@ class RRTPathOptimization:
             ],
             u,
             dt,
+            cost
         )
+
+
+    def debugTrajectory(
+            self,
+            prevOptimizationPath : List[OptimizationState], 
+            optimizedPath : List[OptimizationState],
+            obstacles : List[Obstacle], 
+            collisionObstacles : List[Obstacle],
+            voxelMesh : pv.PolyData,
+            collision : List[int], 
+    ):
+        pv_ = pv.Plotter()
+        pv_.add_mesh(voxelMesh, color="red", opacity=0.3)
+
+        for i, s in enumerate(prevOptimizationPath):
+            if i not in collision:
+                continue
+            mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
+            pv_.add_mesh(
+                mesh, color="green", opacity=0.5, show_edges=True
+            )
+        
+        for i, s in enumerate(optimizedPath):
+            if i in collision:
+                color = "orange"
+            else:
+                continue
+                color = "blue"
+            mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
+            pv_.add_mesh(
+                mesh, color=color, opacity=0.5, show_edges=True
+            )
+        
+        for obs in obstacles:
+            if obs.iteration not in collision:
+                continue
+            normal = obs.normal
+            centroid = obs.closestPointObstacle
+
+            plane = pv.Plane(center=centroid, direction=normal, i_size=1.0, j_size=1.0)
+            pv_.add_mesh(plane, color="yellow", opacity=0.3)
+
+        for obs in collisionObstacles:
+            normal = obs.normal
+            centroid = obs.closestPointObstacle
+
+            arrow = pv.Arrow(
+                start=centroid,
+                direction=normal)
+            
+            pv_.add_mesh(arrow, color="orange", opacity=1.0, show_edges=True)
+            
+            plane = pv.Plane(center=centroid, direction=normal, i_size=1.0, j_size=1.0)
+            pv_.add_mesh(plane, color="orange", opacity=1.0, show_edges=True)    
+        
+        pv_.add_axes()
+        pv_.show_grid()
+        pv_.show()
+        return
 
     def visualize_trajectory(
         self, initial_path, optimized_path, voxel_mesh, obstacles=None, steps : List[int] = [] 
