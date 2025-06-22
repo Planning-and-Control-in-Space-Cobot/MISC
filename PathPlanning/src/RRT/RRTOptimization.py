@@ -356,7 +356,7 @@ class RRTPathOptimization:
                     )
 
             self.opti.subject_to(
-                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < maxDistance**2
+                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < 4*maxDistance**2
             )
 
         # State and actuation constraints
@@ -377,10 +377,10 @@ class RRTPathOptimization:
         for i in range(self.N):
             self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
-        for i in range(1, self.N - 1):
-            self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
-                self.x[0:3, i] - self.xf[0:3]
-            )
+        #for i in range(1, self.N - 1):
+        #    self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
+        #        self.x[0:3, i] - self.xf[0:3]
+        #    )
 
         self.opti.minimize(self.cost)
 
@@ -431,6 +431,102 @@ class RRTPathOptimization:
 
         sol = self.opti.solve_limited()
         return sol
+
+    def convexOptimization(
+            self, 
+            initialPath : List[OptimizationState], 
+            obstacles : List[Obstacle],
+            maxDistances : List[float],
+            initialU : np.ndarray, 
+            dt,
+            xi = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
+            xf = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
+    ):
+        """Setup the convex optimization problem, this function only needs to be called
+        once, while we maintain the same number of obstacles and collisions
+
+        Parameters
+            initialPath (List[OptimizationState]): initial path to optimize
+            obstacles (List[Obstacle]): List of obstacle in the environment we need to avoid
+            maxDistance (List[Float]): List of the maximum distance to the obstacle in each step (the max distance is the maximum of the minimum distance)
+            xi (np.ndarray): initial state of the robot
+            xf (np.ndarray): final state of the robot
+
+        Returns:
+            None
+        """
+        self.optiLinear = ca.Opti()
+
+        self.uL = self.optiLinear.variable(6, self.N)
+        self.xL = self.optiLinear.variable(13, self.N)
+
+        x_sym = ca.MX.sym("x", 13)
+        u_sym = ca.MX.sym("u", 6)
+        A, B, f = self.robot.linearizedDynamics(x=x_sym, u=u_sym, dt=dt)
+
+        self.linearizedDynamics = ca.Function("linearizedDynamics",  [x_sym, u_sym], [A, B, f])
+
+
+        # Dynamic Constraints
+        for i in range(self.N - 1):
+            xNom = initialPath[i].get_state()
+            uNom = initialPath[i].u
+            Ak, Bk, Fk = self.linearizedDynamics(xNom, uNom)
+            self.optiLinear.subject_to(
+                self.xL[:, i+1] == self.xL[:, i] + Ak @ (self.xL[:, i] - xNom) 
+                    + Bk @ (self.uL[:, i] - uNom) + Fk
+            )
+
+        for i in range (self.N):
+            self.optiLinear.subject_to(
+                self.optiLinear.bounded(-3, self.uL[:, i], 3)
+            )
+            self.optiLinear.subject_to(
+                self.optiLinear.bounded(
+                    self.stateMinValues, self.xL[:, i], self.stateMaxValues
+                )
+            )
+            self.optiLinear.subject_to(ca.sumsqr(self.xL[6:10, i]) == 1)
+        
+        for i in range(1, self.N - 1):
+            obstacles = [o for o in obstacles if o.iteration == i]
+            pos = self.xL[0:3, i]
+            R_q = sc.Rotation.from_quat(self.xL[6:10, i])
+            
+            for obstacle in obstacles:
+                for v in self.robot.getVertices():
+                    self.optiLinear.subject_to(
+                        obstacle.normal.reshape((1, 3))
+                        @ (R_q.as_matrix() @ v + pos)
+                        > obstacle.normal.reshape((1, 3)) @ obstacle.closestPointObstacle.reshape((3, 1)) + obstacle.safetyMargin
+                    )
+            #self.optiLinear.subject_to(
+            #    ca.sumsqr(self.xL[0:3, i] - initialPath[i].x) < maxDistances[i]**2
+            #)
+        
+        self.optiLinear.subject_to(self.xL[:, -1] == xf)  # Final State
+        self.optiLinear.subject_to(self.xL[:, 0] == xi) # Initial State
+    
+        cost = 0
+        for i in range(self.N):
+            cost += self.uL[:, i].T @ 0.1 @ self.uL[:, i] # Actuation cost
+            cost += (self.xL[0:3, i] - xf[0:3]).T @ (
+                self.xL[0:3, i] - xf[0:3]
+            ) # Position cost
+            cost += 1 - ca.dot(self.xL[6:10, i], xf[6:10])**2 # Quat cost
+        self.optiLinear.minimize(cost)
+        
+        self.optiLinear.solver(
+            "sqpmethod"
+        )
+    
+        for i in range(self.N):
+            self.optiLinear.set_initial(self.xL[0:3, i], initialPath[i].x)
+            self.optiLinear.set_initial(self.xL[3:6, i], initialPath[i].v)
+            self.optiLinear.set_initial(self.xL[6:10, i], initialPath[i].q)
+            self.optiLinear.set_initial(self.xL[10:13, i], initialPath[i].w)
+            self.optiLinear.set_initial(self.uL[:, i], initialPath[i].u)
+        sol = self.optiLinear.solve()
 
     def getSolution(self, sol: ca.OptiSol):
         if sol is None:

@@ -21,7 +21,7 @@ def main():
     obstacles, and collision status.
     """
     # Load the optimization data from a pickle file
-    with open(os.path.join(scriptDir, "0_2sOptimizedPath.pkl"), "rb") as f:
+    with open(os.path.join(scriptDir, "optimizedPath.pkl"), "rb") as f:
         data = pickle.load(f)
 
     print("Data loaded successfully.")
@@ -103,13 +103,13 @@ def main():
     fig1.suptitle("Optimization Process Analysis", fontsize=16)
     fig1.set_tight_layout(True)
 
+
     # Save figure 1 to disk
     directory = "/home/andret/MEEC/Thesis/images/robotOnly"
     fig1.savefig(os.path.join(directory,
                  "CostVariationWithIterationNoMaxDT.png"),
                  bbox_inches="tight", dpi=300)
 
-    plt.close(fig1)
 
     #== Figure 2: Time per iteration, num obstacles, max distance, collision ==
     fig2 = plt.figure(figsize=(12, 8))
@@ -167,6 +167,7 @@ def main():
                  "ObstacleVariationWithIterationNoMaxDT.png"),
                  bbox_inches="tight", dpi=300)
 
+    plt.show()
     plt.close(fig2)
 
 

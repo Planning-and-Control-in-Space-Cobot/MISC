@@ -197,7 +197,6 @@ class Robot(Model):
         m_.transform(T)
         return m_
 
-
     def getVertices(self) -> np.ndarray:
         """Returns the vertices of the box containing the robot, when the robot is represented as a rectangular box, that is centered with the origin and axis aligned with the axes.
 
@@ -342,3 +341,22 @@ class Robot(Model):
         q_next = quat_int(q, w, dt)
         w_next = w + dt * ca.inv(self.J) @ (M - ca.cross(w, self.J @ w))
         return flat(x_next, v_next, q_next, w_next)
+
+    def linearizedDynamics(self, x : ca.MX, u : ca.MX, dt : ca.MX):
+        """Computes the linearized dynamics of the robot
+        
+        The dynamics of the system are non linear, and non convex, in order to
+        work with a convex optimization problem, we need to linearize the 
+        dynamics around a given point. This will then allow us to then represent 
+        the system like this x(k+1)  = A(k) (xk - x0) + B(k) (uk - u0) + x0
+
+        Parameters:
+            x (ca.MX): Current state of the robot, which includes position, 
+                velocity, quaternion and angular velocity. 13x1 vector.
+            u (ca.MX): Control inputs for the robot. 6x1 vector.
+            dt (ca.MX): Time step for the state update.
+        """
+        f = self.f(x, u, dt)
+        A = ca.jacobian(f, x)
+        B = ca.jacobian(f, u)
+        return A, B, f

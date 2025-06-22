@@ -100,6 +100,22 @@ def computeObstacles(environment, robot, path):
 
     return obstacles, maxDistances
 
+def filterObstacles(obstacles):
+    filteredObstsacles = []
+    for obs in obstacles:
+        obstaclesSameIteration = [
+            o for o in obstacles if o.iteration == obs.iteration
+        ]
+        newObstacle = True
+        for o in obstaclesSameIteration:
+            if  np.allclose(o.normal, obs.normal, atol=0.1):
+                newObstacle = False
+                break
+        if newObstacle:
+            filteredObstsacles.append(obs)
+    return filteredObstsacles
+                
+
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -320,7 +336,7 @@ def main():
     prev_u = np.zeros((6, len(optimizationPath)))
     dt = 0.2
 
-    numOptimizationIterations = 50
+    numOptimizationIterations = 20
     optimizedPaths = []
 
     obstacles, maxDistances = computeObstacles(
@@ -339,17 +355,15 @@ def main():
         optimizationTime = time.time() - startTime
 
         _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
+        print(f"Time taken for optimization: {optimizationTime:.2f} seconds")
 
-        for o, _o, d in zip(optimizationPath, _optimizationPath, maxDistances):
-            if np.linalg.norm(o.x - _o.x) > 1:
-                print(f"o _o : x v q w : {o.x} | {_o.x} || {o.v} | {_o.v} || {o.q} | {_o.q} || {o.w} | {_o.w}")
-        print(f"Iteration {i} cost : {cost} dt {_dt} seconds")
-        
+        #if np.abs(_dt - dt) < 0.05:
+        #    rrtOpt.convexOptimization(
+        #        optimizationPath, obstacles, maxDistances, prev_u, dt, xi, xf
+        #    )
 
-        drawEnvironmentAndNormals(
-            environment, obstacles, robot, _optimizationPath
-        )
-        print(f"Total Time :  {_dt} seconds, Cost: {cost}")    
+
+
         # Evaluate the trajectory to ensure it is valid
         anyCollision = False
         collisionObstacles = []
@@ -360,7 +374,7 @@ def main():
             collision, depth, _, nearestPointObstacle, normal = environment.collide(robot.fcl_obj, x, trf.Rotation.from_quat(q))
 
             if collision:
-                    print(f"Collision Depth: {depth}")
+                    print(f"Colision Depth: {depth}")
                     collisionsIteration.append(j)
                     collisionObstacles.append(Obstacle(
                         nearestPointObstacle, -normal, 0, j,
@@ -368,26 +382,27 @@ def main():
     
                     anyCollision = True
 
-            if anyCollision:
-                print(f"{Fore.RED} {len(collisionObstacles)} Collision detected in iteration {i}. Recomputing obstacles.{Style.RESET_ALL}")
-                for obs in collisionObstacles:
-                    print(
-                        f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
-                    )
-                #rrtOpt.debugTrajectory(
-                #    optimizationPath, _optimizationPath, obstacles, collisionObstacles, environment.voxel_mesh, collisionsIteration
-                #)
-                obstacles.extend(collisionObstacles)
-            else:
-                print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
-                optimizationPath = _optimizationPath
-                prev_u = _prev_u
-                dt = _dt
-                obstacles, maxDistances = computeObstacles(
-                    environment, robot, optimizationPath
+        if anyCollision:
+            print(f"{Fore.RED} {len(collisionObstacles)} Collision detected in iteration {i}. Recomputing obstacles.{Style.RESET_ALL}")
+            for obs in collisionObstacles:
+                print(
+                    f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
                 )
+            
+
+            obstacles.extend(collisionObstacles)
+            print(f"Total obstacles after filtering: {len(obstacles)}")
+        else:
+            print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
+            optimizationPath = _optimizationPath
+            prev_u = _prev_u
+            dt = _dt
+            obstacles, maxDistances = computeObstacles(
+                environment, robot, optimizationPath
+            )
 
             optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
+
 
 
     pv_ = rrtOpt.visualize_trajectory(
