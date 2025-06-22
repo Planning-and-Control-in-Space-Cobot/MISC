@@ -142,6 +142,7 @@ class Robot(Model):
         collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
 
         if collision:
+            print("In Robot i have collision with environment object")
             pass
 
         for v in vertices:
@@ -156,7 +157,7 @@ class Robot(Model):
                 return []
 
             obstacles.append(
-                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, iteration, v)
+                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, iteration)
             )
             maxDistance = max(maxDistance, minDistance)
         filteredObstacles = []
