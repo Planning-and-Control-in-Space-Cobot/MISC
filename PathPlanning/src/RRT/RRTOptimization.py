@@ -5,6 +5,8 @@ from scipy.spatial.transform import Rotation as R
 import casadi as ca
 import spatial_casadi as sc
 
+import numba 
+
 from typing import List
 
 import os
@@ -27,13 +29,12 @@ class OptimizationState:
     """A class to represent the each state / step in the optimization, this class
     will also work as an interface for the optimization problem
     """
-
     def __init__(
         self,
         x: np.ndarray,
         q: np.ndarray,
-        v: np.ndarray = np.zeros((3, 1)),
-        w: np.ndarray = np.zeros((3, 1)),
+        v: np.ndarray = np.zeros((3)),
+        w: np.ndarray = np.zeros((3)),
         u: np.ndarray = np.zeros((6, 1)),
         i: np.ndarray = 0,
     ):
@@ -66,11 +67,200 @@ class RRTPathOptimization:
         self.stateMinValues = stateMinValues
         self.stateMaxValues = stateMaxValues
 
+    @staticmethod
+    def checkDataValidity(
+        minStateValues : np.ndarray, 
+        maxStateValues : np.ndarray, 
+        initialPath : np.ndarray, 
+        initialActuation : np.ndarray, 
+        obstaclesNormals : np.ndarray,
+        obstacleClosestPoints : np.ndarray, 
+        obstacleSafetyMargins : np.ndarray, 
+        obstacleMaxDistances : np.ndarray, 
+        numObstacles : int,
+        xi : np.ndarray, 
+        xf : np.ndarray 
+    ):
+        """Check the validity of the data passed to the optimization problem.
+
+        To ensure the problem is working as expected, we need to make sure all
+        the data is valid, otherwise the results may vary from the expected
+        ones and introduce errors that are hard to debug.
+
+        Parameters:
+            minStateValues (np.ndarray): Minimum values for the state variables
+            maxStateValues (np.ndarray): Maximum values for the state variables
+            initialPath (np.ndarray): Initial path to optimize
+            initialActuation (np.ndarray): Initial actuation values
+            obstaclesNormals (np.ndarray): Normals of the obstacles
+            obstacleClosestPoints (np.ndarray): Closest points of the obstacles
+            obstacleSafetyMargins (np.ndarray): Safety margins for the obstacles
+            obstacleMaxDistances (np.ndarray): Maximum distances to the 
+                obstacles
+            xi (np.ndarray): Initial state of the robot
+            xf (np.ndarray): Final state of the robot
+        
+        Returns:
+            bool: True if all data is valid, False otherwise
+        """
+        ## Check min state values:
+        if minStateValues.shape != (13,):
+            print("Invalid min state values shape, expected (13,)")
+            return False
+        if np.any(minStateValues[6:10] < -1):
+            print(f"Invalid Quaternion in min state value")
+            return False
+        if np.any(np.isnan(minStateValues)):
+            print("NaN values in min state values")
+            return False
+        if np.any(np.isinf(minStateValues)):        
+            print("Inf values in min state values")
+            return False
+        ## Check max state values:
+        if maxStateValues.shape != (13,):
+            print("Invalid max state values shape, expected (13,)")
+            return False
+        if np.any(maxStateValues[6:10] > 1):
+            print(f"Invalid Quaternion in max state value")
+            return False
+        if np.any(np.isnan(maxStateValues)):
+            print("NaN values in max state values")
+            return False
+        if np.any(np.isinf(maxStateValues)):
+            print("Inf values in max state values")
+            return False
+        
+        ## Check if min state values are less than max state values
+        if np.any(minStateValues > maxStateValues):
+            print("Min state values are greater than max state values")
+            return False
+
+        ## Check initial Path
+        if initialPath.shape[1] != 13:
+            print("Invalid initial path shape, expected (13, N)")
+            return False
+
+        if np.any(np.isnan(initialPath)):
+            print("NaN values in initial path")
+            return False
+    
+        if np.any(np.isinf(initialPath)):
+            print("Inf values in initial path")
+            return False
+
+        for path in initialPath:
+            if not np.allclose(np.linalg.norm(path[6:10]), 1, atol = 1e-1): 
+                print(f"Invalid Quaternion in initial path {path} {np.linalg.norm(path[6:10])}")
+                return False
+            if np.any(path < minStateValues - 1e-2) or np.any(path > maxStateValues + 1e-2):
+                print(f"Invalid state in initial path {path}, out of bounds")
+                print(f"Min state values: {minStateValues}, Max state values: {maxStateValues}")
+                return False
+        
+        ## Check initial actuation
+        if initialActuation.shape[0] != 6:
+            print("Invalid initial actuation shape, expected (6, N)")
+            return False
+        if np.any(np.isnan(initialActuation)):
+            print("NaN values in initial actuation")
+            return False
+        if np.any(np.isinf(initialActuation)):
+            print("Inf values in initial actuation")
+            return False
+
+        ## Check obstacle normals
+        if  np.any(np.isnan(obstaclesNormals)):
+            print("NaN values in obstacles normals")
+            return False
+        if np.any(np.isinf(obstaclesNormals)):
+            print("Inf values in obstacles normals")
+            return False    
+        if np.linalg.norm(obstaclesNormals, axis=1).any() != 1:
+            print("Invalid Quaternion in obstacles normals")
+            return False
+        if obstaclesNormals.shape[1] != 3:
+            print("Invalid obstacles normals shape, expected (N, 3)")
+            return False
+        
+        ## Check obstacle closest points
+        if np.any(np.isnan(obstacleClosestPoints)):
+            print("NaN values in obstacles closest points")
+            return False
+        if np.any(np.isinf(obstacleClosestPoints)):
+            print("Inf values in obstacles closest points")
+            return False
+        if obstacleClosestPoints.shape[1] != 3:
+            print("Invalid obstacles closest points shape, expected (N, 3)")
+            return False
+        
+        ## Check obstacle safety margins
+        if np.any(np.isnan(obstacleSafetyMargins)):
+            print("NaN values in obstacles safety margins")
+            return False
+        if np.any(np.isinf(obstacleSafetyMargins)):
+            print("Inf values in obstacles safety margins")
+            return False
+        if np.any(obstacleSafetyMargins < 0):
+            print("Negative values in obstacles safety margins")
+            return False
+        if obstacleSafetyMargins.size != numObstacles:
+            print(f"Invalid obstacle safety margins, expect 1 per obstacle")
+            return False
+        
+        ## Check obstacle max distances
+        if np.any(np.isnan(obstacleMaxDistances)):
+            print("NaN values in obstacles max distances")
+            return False
+        if np.any(np.isinf(obstacleMaxDistances)):
+            print("Inf values in obstacles max distances")
+            return False
+        if np.any(obstacleMaxDistances < 0):
+            print("Negative values in obstacles max distances")
+            return False
+
+        ## Check initial state
+        if xi.shape != (13,):
+            print("Invalid initial state shape, expected (13,)")
+            return False
+        if not np.allclose(np.linalg.norm(xi[6:10]), 1, atol = 1e-1):
+            print(f"Invalid Quaternion in initial state")
+            return False
+        if np.any(np.isnan(xi)):
+            print("NaN values in initial state")
+            return False
+        if np.any(np.isinf(xi)):
+            print("Inf values in initial state")
+            return False
+        ## initialState must be within the bounds
+        if np.any(xi < minStateValues) or np.any(xi > maxStateValues):
+            print(f"Invalid initial state {xi}, out of bounds")
+            return False
+        
+        ## Check final state
+        if xf.shape != (13,):
+            print("Invalid final state shape, expected (13,)")
+            return False
+        if not np.allclose(np.linalg.norm(xf[6:10]), 1, atol = 1e-1):
+            print(f"Invalid Quaternion in final state {xf[6:10]}")
+            return False
+        if np.any(np.isnan(xf)):
+            print("NaN values in final state")
+            return False
+        if np.any(np.isinf(xf)):
+            print("Inf values in final state")
+            return False
+        ## finalState must be within the bounds
+        if np.any(xf < minStateValues) or np.any(xf > maxStateValues):
+            print(f"Invalid final state {xf}, out of bounds")
+            return False
+        return True
+
     def setup_optimization(
         self,
         initial_path: List[OptimizationState],
         obstacles : List[Obstacle],
         maxDistances : List[float],
+        initialU : np.ndarray,
         xi: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
         xf: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
     ):
@@ -87,6 +277,27 @@ class RRTPathOptimization:
         Returns:
             None
         """
+        ## Check data validity 
+        import time 
+        startTime = time.time()
+        if not self.checkDataValidity(
+            self.stateMinValues, 
+            self.stateMaxValues, 
+            np.vstack([s.get_state() for s in initial_path]), 
+            initialU,
+            np.array([o.normal for o in obstacles]),
+            np.array([o.closestPointObstacle for o in obstacles]),
+            np.array([o.safetyMargin for o in obstacles]),
+            np.array(maxDistances),
+            len(obstacles),
+            xi,
+            xf
+        ):
+            raise ValueError("Invalid data passed to the optimization problem")     
+        print(f"Data validity check took {time.time() - startTime:.2f} seconds")
+
+
+
         self.opti = ca.Opti()
         self.N = len(initial_path)
 
@@ -156,6 +367,9 @@ class RRTPathOptimization:
                     self.stateMinValues, self.x[:, i], self.stateMaxValues
                 )
             )
+            self.opti.subject_to(ca.sumsqr(self.x[6:10, i]) == 1)
+
+        #self.opti.subject_to(
 
         # Define the cost function
         self.cost = 0
@@ -218,119 +432,6 @@ class RRTPathOptimization:
         sol = self.opti.solve_limited()
         return sol
 
-    def f_numpy(
-        self, state: np.ndarray, u: np.ndarray, dt: float
-    ) -> np.ndarray:
-        """Compute next state using the same dynamics as robot.f, but in NumPy (no CasADi)."""
-        x = state[0:3]
-        v = state[3:6]
-        q = state[6:10]
-        w = state[10:13]
-
-        F = self.robot.A[0:3, :] @ u
-        M = self.robot.A[3:6, :] @ u
-
-        # Position and velocity update
-        x_next = x + v * dt
-        R_q = R.from_quat(q).as_matrix()
-        v_next = v + (dt / self.robot.m) * (R_q @ F)
-
-        # Quaternion integration
-        w_norm = np.linalg.norm(w) + 1e-3
-        axis = w / w_norm
-        theta = w_norm * dt
-        dq = R.from_rotvec(axis * theta).as_quat()
-        q_next = R.from_quat(dq) * R.from_quat(q)
-        q_next = q_next.as_quat()
-
-        # Angular velocity update
-        J = self.robot.J
-        w_next = w + dt * np.linalg.inv(J) @ (M - np.cross(w, J @ w))
-
-        return np.hstack([x_next, v_next, q_next, w_next])
-
-    def debug_constraints(self, sol: ca.OptiSol, obstacles: List[Obstacle]):
-        import numpy as np
-
-        x_val = sol.value(self.x)
-        u_val = sol.value(self.u)
-        dt_val = float(sol.value(self.dt))
-
-        print("\n=== Decision Variables ===")
-        print(f"dt = {dt_val:.6f}")
-        for i in range(self.N):
-            print(f"State {i}:")
-            print(f"  pos      = {x_val[0:3, i].flatten()}")
-            print(f"  vel      = {x_val[3:6, i].flatten()}")
-            print(f"  quat     = {x_val[6:10, i].flatten()}")
-            print(f"  ang_vel  = {x_val[10:13, i].flatten()}")
-            print(f"  control  = {u_val[:, i].flatten()}")
-
-        print("\n=== Obstacle Constraints ===")
-        P_R_base = np.diag([1 / 0.24**2, 1 / 0.24**2, 1 / 0.10**2])
-        for i, obs in enumerate(obstacles):
-            c_R = x_val[0:3, i + 1]
-            q_i = x_val[6:10, i + 1]
-            R_i = R.from_quat(q_i).as_matrix()
-            P_R_inv = R_i @ np.linalg.inv(P_R_base) @ R_i.T
-            xi_val = sol.value(self.xi_[:, i])
-            mu_r_val = float(sol.value(self.mu_r_[i]))
-            nu_val = float(sol.value(self.nu_[i]))
-            cube_vertices = obs.generateCube()
-
-            print(f"\nObstacle iter {i}:")
-            c1 = (
-                -0.25 * np.dot(xi_val, xi_val)
-                - np.dot(xi_val, c_R)
-                - mu_r_val
-                - nu_val
-                - obs.safetyMargin**2
-            )
-            if c1 < 0:
-                print(
-                    f"  Constraint 1 (support function): {float(c1):.6f} >= 0"
-                )
-
-            c2_all = cube_vertices.T @ xi_val + mu_r_val
-            for j, c2 in enumerate(c2_all):
-                if c2 < 0:
-                    print(
-                        f"  Constraint 2.{j + 1} (vertex): {float(c2):.6f} >= 0"
-                    )
-
-            c3 = np.dot(xi_val, xi_val) - 4 * obs.safetyMargin**2
-            if c3 < 0:
-                print(f"  Constraint 3 (norm): {float(c3):.6f} >= 0")
-
-            c4 = nu_val**2 - float(np.dot(xi_val, P_R_inv @ xi_val))
-            if c4 < 0:
-                print(f"  Constraint 4 (dual): {float(c4):.6f} >= 0")
-
-        print("\n=== Dynamics Constraints ===")
-        for i in range(self.N - 1):
-            state_i = x_val[:, i]
-            u_i = u_val[:, i]
-            actual = x_val[:, i + 1]
-            predicted = self.f_numpy(state_i, u_i, dt_val)
-            residual = actual - predicted
-            print(
-                f"  Dynamics {i}: max residual = {np.max(np.abs(residual)):.2e}"
-            )
-
-        print("\n=== Actuation Bounds ===")
-        for i in range(self.N):
-            u_i = u_val[:, i]
-            if not np.all((-3 <= u_i) & (u_i <= 3)):
-                print(f"  u[{i}] out of bounds: {u_i}")
-
-        print("\n=== State Bounds ===")
-        for i in range(self.N):
-            x_i = x_val[:, i]
-            if not np.all(
-                (self.stateMinValues <= x_i) & (x_i <= self.stateMaxValues)
-            ):
-                print(f"  x[{i}] out of bounds.")
-
     def getSolution(self, sol: ca.OptiSol):
         if sol is None:
             return []
@@ -351,65 +452,6 @@ class RRTPathOptimization:
             dt,
             cost
         )
-
-
-    def debugTrajectory(
-            self,
-            prevOptimizationPath : List[OptimizationState], 
-            optimizedPath : List[OptimizationState],
-            obstacles : List[Obstacle], 
-            collisionObstacles : List[Obstacle],
-            voxelMesh : pv.PolyData,
-            collision : List[int], 
-    ):
-        pv_ = pv.Plotter()
-        pv_.add_mesh(voxelMesh, color="red", opacity=0.3)
-
-        for i, s in enumerate(prevOptimizationPath):
-            if i not in collision:
-                continue
-            mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
-            pv_.add_mesh(
-                mesh, color="green", opacity=0.5, show_edges=True
-            )
-        
-        for i, s in enumerate(optimizedPath):
-            if i in collision:
-                color = "orange"
-            else:
-                continue
-                color = "blue"
-            mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
-            pv_.add_mesh(
-                mesh, color=color, opacity=0.5, show_edges=True
-            )
-        
-        for obs in obstacles:
-            if obs.iteration not in collision:
-                continue
-            normal = obs.normal
-            centroid = obs.closestPointObstacle
-
-            plane = pv.Plane(center=centroid, direction=normal, i_size=1.0, j_size=1.0)
-            pv_.add_mesh(plane, color="yellow", opacity=0.3)
-
-        for obs in collisionObstacles:
-            normal = obs.normal
-            centroid = obs.closestPointObstacle
-
-            arrow = pv.Arrow(
-                start=centroid,
-                direction=normal)
-            
-            pv_.add_mesh(arrow, color="orange", opacity=1.0, show_edges=True)
-            
-            plane = pv.Plane(center=centroid, direction=normal, i_size=1.0, j_size=1.0)
-            pv_.add_mesh(plane, color="orange", opacity=1.0, show_edges=True)    
-        
-        pv_.add_axes()
-        pv_.show_grid()
-        pv_.show()
-        return
 
     def visualize_trajectory(
         self, initial_path, optimized_path, voxel_mesh, obstacles=None, steps : List[int] = [] 

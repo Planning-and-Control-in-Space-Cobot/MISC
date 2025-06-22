@@ -43,45 +43,25 @@ def createPyBox(axis):
     )
     return box
 
+def drawEnvironmentAndNormals(environment, obstacles, robot, path):
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
 
-def drawEnvironmentAndNormals(robot, environment, path):
-    obstacles = []
-    for i, p in enumerate(path[1:-1]):
+    for obs in obstacles:
+        pos = obs.closestPointObstacle
+        normal = obs.normal
+        pv_.add_arrows(pos, normal, mag=0.3, color="orange")
+    
+    for p in path:
         x = p.x
         q = p.q
         R = trf.Rotation.from_quat(q)
-        if environment.numCollisions(robot.fcl_obj, x, q) > 0:
-            return None
-
-        _, p_obj, p_env = environment.getClosestPoints(robot.fcl_obj, x, q)
-        translation = p_obj - x
-        translation = R.as_matrix().T @ translation
-        obstacle = Obstacle(p_obj, p_env, translation, i)
-        obstacles.append(obstacle)
-
-    newNormal = []
-    np.set_printoptions(precision=4, suppress=True)
-    for obs in obstacles:
-        print(f"obs.normal: {obs.normal}")
-
-    for obs in obstacles:
-        append = True
-        for normal, _ in newNormal:
-            if np.allclose(normal, obs.normal, atol=1e-2):
-                print(f"Equal Normal found {normal} {obs.normal}")
-                append = False
-                break
-        if append:
-            newNormal.append((obs.normal, obs.closestPointObstacle))
-    print(
-        f"len(obstacles) vs len(newNormal): {len(obstacles)} {len(newNormal)}"
-    )
-    pv_ = pv.Plotter()
-    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1)
-    for normal, point in newNormal:
-        pv_.add_arrows(point, normal, mag=0.3, color="orange")
+        robot_mesh = robot.getPVMesh(x, R)
+        if robot_mesh is not None:
+            pv_.add_mesh(robot_mesh, color="blue", opacity=0.4)
+    
     pv_.show()
-
+    return
 
 def drawEnvironmentAndObstacles(environment, obstacles):
     """Draws the environment and the obstacles in a PyVista plotter.
@@ -174,7 +154,6 @@ def main():
         default="map.pcd",
         help="Path to the point cloud map file",
     )
-
     args = parser.parse_args()
 
     if args.useSavedPath and not os.path.exists(
@@ -196,7 +175,6 @@ def main():
         raise ValueError(
             f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file."
         )
-
     pcd = o3d.io.read_point_cloud(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
     )
@@ -261,7 +239,16 @@ def main():
         planner = RRTPlanner(
             environment,
             robot.getCollisionGeometry(),
-            robot.getPVMesh(),
+            pv.Box(
+                bounds=(
+                    -0.225,
+                    0.225,
+                    -0.225,
+                    0.225,
+                    -0.06,
+                    0.06,
+                )
+            ),
             payload,
             payloadMesh,
             payloadTranslation,
@@ -331,7 +318,7 @@ def main():
     print(f"xf: {xf}")
 
     prev_u = np.zeros((6, len(optimizationPath)))
-    dt = 1
+    dt = 0.2
 
     numOptimizationIterations = 50
     optimizedPaths = []
@@ -342,8 +329,9 @@ def main():
 
     for i in range(numOptimizationIterations):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
+
         startTime = time.time()
-        rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, xi=xi, xf=xf)
+        rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, prev_u, xi=xi, xf=xf)
 
         sol = rrtOpt.optimize(
             optimizationPath, dt=dt, prev_u=prev_u
@@ -351,6 +339,16 @@ def main():
         optimizationTime = time.time() - startTime
 
         _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
+
+        for o, _o, d in zip(optimizationPath, _optimizationPath, maxDistances):
+            if np.linalg.norm(o.x - _o.x) > 1:
+                print(f"o _o : x v q w : {o.x} | {_o.x} || {o.v} | {_o.v} || {o.q} | {_o.q} || {o.w} | {_o.w}")
+        print(f"Iteration {i} cost : {cost} dt {_dt} seconds")
+        
+
+        drawEnvironmentAndNormals(
+            environment, obstacles, robot, _optimizationPath
+        )
         print(f"Total Time :  {_dt} seconds, Cost: {cost}")    
         # Evaluate the trajectory to ensure it is valid
         anyCollision = False
@@ -362,34 +360,34 @@ def main():
             collision, depth, _, nearestPointObstacle, normal = environment.collide(robot.fcl_obj, x, trf.Rotation.from_quat(q))
 
             if collision:
-                print(f"Collision Depth: {depth}")
-                collisionsIteration.append(j)
-                collisionObstacles.append(Obstacle(
-                    nearestPointObstacle, -normal, 0, j,
-                ))
- 
-                anyCollision = True
+                    print(f"Collision Depth: {depth}")
+                    collisionsIteration.append(j)
+                    collisionObstacles.append(Obstacle(
+                        nearestPointObstacle, -normal, 0, j,
+                    ))
+    
+                    anyCollision = True
 
-        if anyCollision:
-            print(f"{Fore.RED} {len(collisionObstacles)} Collision detected in iteration {i}. Recomputing obstacles.{Style.RESET_ALL}")
-            for obs in collisionObstacles:
-                print(
-                    f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
+            if anyCollision:
+                print(f"{Fore.RED} {len(collisionObstacles)} Collision detected in iteration {i}. Recomputing obstacles.{Style.RESET_ALL}")
+                for obs in collisionObstacles:
+                    print(
+                        f"Collision at iteration {obs.iteration} with normal {obs.normal} at point {obs.closestPointObstacle}"
+                    )
+                #rrtOpt.debugTrajectory(
+                #    optimizationPath, _optimizationPath, obstacles, collisionObstacles, environment.voxel_mesh, collisionsIteration
+                #)
+                obstacles.extend(collisionObstacles)
+            else:
+                print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
+                optimizationPath = _optimizationPath
+                prev_u = _prev_u
+                dt = _dt
+                obstacles, maxDistances = computeObstacles(
+                    environment, robot, optimizationPath
                 )
-            #rrtOpt.debugTrajectory(
-            #    optimizationPath, _optimizationPath, obstacles, collisionObstacles, environment.voxel_mesh, collisionsIteration
-            #)
-            obstacles.extend(collisionObstacles)
-        else:
-            print(f"{Fore.GREEN} No collisions detected in iteration {i}.{Style.RESET_ALL}")
-            optimizationPath = _optimizationPath
-            prev_u = _prev_u
-            dt = _dt
-            obstacles, maxDistances = computeObstacles(
-                environment, robot, optimizationPath
-            )
 
-        optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
+            optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
 
 
     pv_ = rrtOpt.visualize_trajectory(
