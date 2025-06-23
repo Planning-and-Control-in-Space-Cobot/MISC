@@ -1,7 +1,9 @@
 import os
 import sys
+
 import numpy as np
 import pyvista as pv
+import rrtcxx
 import fcl
 from scipy.spatial.transform import Rotation as R, Slerp
 import scipy.spatial.transform as trf
@@ -11,7 +13,6 @@ from typing import List, Optional
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 from Environment import EnvironmentHandler as CollisionEnvironment3D
-
 
 class RRTState:
     def __init__(self, x: np.ndarray, q: np.ndarray, i: int = 0):
@@ -115,7 +116,6 @@ class RRTPath:
                     pv_.add_mesh(payload_mesh, color="green", opacity=0.4)
 
         return pv_
-
 
 class RRTPlanner3D:
     class Node:
