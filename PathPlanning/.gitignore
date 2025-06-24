@@ -4,3 +4,5 @@
 **/jit*
 **/.vscode/*
 *.whl
+*.egg-info/
+

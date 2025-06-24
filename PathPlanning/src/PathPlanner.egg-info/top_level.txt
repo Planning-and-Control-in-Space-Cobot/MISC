@@ -1,5 +1,0 @@
-2D
-3D
-EllipsoidOptimization
-MapCreation
-RRT
