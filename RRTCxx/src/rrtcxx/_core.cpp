@@ -111,8 +111,7 @@ public:
             } else {
                 randState = State(
                     Eigen::Vector3d(distX(gen), distY(gen), distZ(gen)),
-                    Eigen::Quaterniond::UnitRandom()
-                );
+                    Eigen::Quaterniond::UnitRandom());
             }
 
             // 2) Extend treeA towards random sample
@@ -223,8 +222,6 @@ private:
         coal::DistanceResult res;
 
         coal::distance(robotBox.get(), T1, envModel.get(), T2, req, res);
-
-        std::cout << "Distance from state to environment " << res.min_distance  <<  " " << res.nearest_points[0] << " to " << res.nearest_points[1] << std::endl;
     }
     
     bool isMotionValid(const State& from, const State& to) {
@@ -272,7 +269,15 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("position", &State::position)
         .def_readwrite("orientation", &State::orientation)
         .def("distance", &State::distance)
-        .def("interpolate", &State::interpolate);
+        .def("interpolate", &State::interpolate)
+        .def_property_readonly("q", [](const State& self) {
+            return Eigen::Vector4d(
+                self.orientation.w(),
+                self.orientation.x(),
+                self.orientation.y(),
+                self.orientation.z()
+            );
+        });
 
     py::class_<Node>(m, "Node")
         .def_readwrite("state", &Node::state)
