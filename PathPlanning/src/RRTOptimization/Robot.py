@@ -113,9 +113,10 @@ class Robot(Model):
     def getObstacles(
         self,
         environment: EnvironmentHandler,
-        pos: np.ndarray,
-        R: trf.Rotation,
-        iteration: int,
+        path, 
+        previousPath,
+        previousObstacles, 
+        prevMaxDistances
     ) -> List[Obstacle]:
         """Function to compute the collision planes of the robot with the environment
 
@@ -132,44 +133,65 @@ class Robot(Model):
         """
         if not isinstance(environment, EnvironmentHandler):
             raise TypeError("Environment must be an instance of EnvironmentHandler")
-        vertices = (R.as_matrix() @ self.getVertices().T + pos.copy().reshape((3, 1))).T
-        point = environment.buildSinglePoint()
+        Obstacles = []
+        maxDistances = []
 
-        obstacles = []
+        anyCollision = False    
+        for i, p in enumerate(path):
+            pos = p.x
+            R = trf.Rotation.from_quat(p.q)
+            collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
 
-        maxDistance = -np.inf
-
-        collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
-
-        if collision:
-            print("In Robot i have collision with environment object")
-            pass
-
-        for v in vertices:
-            try:
-                minDistance, pt1, pt2, _ = environment.distance(
-                    point,
-                    v,
-                    trf.Rotation.from_euler("xyz", [0, 0, 0]),
+            if collision:
+                anyCollision = True
+                break
+            obstacles = []
+            maxDistance = -np.inf
+            for v in self.getVertices():
+                point = environment.buildSinglePoint()
+                minDistance, pt1, pt2, _ = environment.distance(point, R.as_matrix() @ v + pos, R)
+                obstacles.append(
+                    Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, i)
                 )
-            except (TypeError, ValueError) as e:
-                print(f"Some error occurred: {e}")
-                return []
+                maxDistance = max(maxDistance, minDistance)
 
-            obstacles.append(
-                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, iteration)
-            )
-            maxDistance = max(maxDistance, minDistance)
-        filteredObstacles = []
-        for obs in obstacles:
-            newObstacle = True
-            for fobs in filteredObstacles:
-                if np.all(obs.normal == fobs.normal) and obs.normal @ obs.closestPointObstacle == fobs.normal @ fobs.closestPointObstacle:
-                    newObstacle = False
-            if newObstacle:
-                filteredObstacles.append(obs)
-            
-        return filteredObstacles, maxDistance
+            filteredObstacles = []
+            for obs in obstacles: 
+                newObstacle = True
+                for fobs in filteredObstacles:
+                    if np.allclose(obs.normal, fobs.normal, 1e-1):
+                        newObstacle = False
+                if newObstacle:
+                    filteredObstacles.append(obs)
+            Obstacles.extend(filteredObstacles)
+            maxDistances.append(maxDistance)
+        
+        if anyCollision:
+            print("Collision detected in the path, computing collision planes")
+            collisionObstacles = []
+            for i, p in enumerate(path):
+                pos = p.x
+                R = trf.Rotation.from_quat(p.q)
+                collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
+                if collision:
+                    t = trf.Rotation.from_quat(p.q).as_matrix().T @ (nearestPointRobot - pos)
+
+                    point = environment.buildSinglePoint()
+                    prevPath = previousPath[i]
+                    prevP = prevPath.x
+
+                    minDistance, pt1, pt2, _ = environment.distance(
+                        point, prevP + trf.Rotation.from_quat(prevPath.q).as_matrix().T @ t
+                    )
+
+                    normal = (pt1 - nearestPointObstacle) / np.linalg.norm(pt1 - nearestPointObstacle)
+                    previousObstacles.append(Obstacle(nearestPointObstacle, normal, minDistance, i))
+                    collisionObstacles.append(
+                        Obstacle(nearestPointObstacle, normal, minDistance, i)
+                    )
+            return previousObstacles, prevMaxDistances, True, collisionObstacles
+        
+        return Obstacles, maxDistances, False, []
 
     @override
     def getPVMesh(self):

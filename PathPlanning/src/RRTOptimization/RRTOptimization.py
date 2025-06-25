@@ -316,15 +316,14 @@ class RRTPathOptimization:
         #)  # Minimum distance to the obstacles in each step in the path (does not matter if we sample the robot or not!)
 
         self.dt = self.opti.variable(1)
-        self.opti.subject_to(self.dt < 0.2)
-        self.opti.subject_to(self.dt > 0)
+        self.opti.subject_to(self.opti.bounded(0, self.dt, 0.5))
 
         # Optimization parameters
         self.xf = self.opti.parameter(13)
         self.xi = self.opti.parameter(13)
         self.opti.set_value(self.xi, xi)
         self.opti.set_value(self.xf, xf)
-        self.opti.subject_to(self.x[:, -1] == self.xf)  # Initial State
+        #self.opti.subject_to(self.x[:, -1] == self.xf)  # Initial State
         self.opti.subject_to(self.x[:, 0] == self.xi)  # Final State
 
         # Dynamic constraints
@@ -348,7 +347,7 @@ class RRTPathOptimization:
                 # half plane constraints:
                 for v in self.robot.getVertices():
                     # How to know if the signal for the half plane is positive or negative?
-                    #
+                    #print(f"v : {R_q.as_matrix() @ v + pos} normal {obstacle.normal.reshape((1, 3))} closestPoint {obstacle.closestPointObstacle.reshape((3, 1))} safetyMargin {obstacle.safetyMargin}")
                     self.opti.subject_to(
                         obstacle.normal.reshape((1, 3))
                         @ (R_q.as_matrix() @ v + pos)
@@ -356,7 +355,7 @@ class RRTPathOptimization:
                     )
 
             self.opti.subject_to(
-                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < 4*maxDistance**2
+                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < maxDistance**2
             )
 
         # State and actuation constraints
@@ -377,10 +376,10 @@ class RRTPathOptimization:
         for i in range(self.N):
             self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
-        #for i in range(1, self.N - 1):
-        #    self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
-        #        self.x[0:3, i] - self.xf[0:3]
-        #    )
+        for i in range(1, self.N - 1):
+            self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
+                self.x[0:3, i] - self.xf[0:3]
+            )
 
         self.opti.minimize(self.cost)
 
@@ -419,7 +418,8 @@ class RRTPathOptimization:
         prev_u: np.ndarray = None,
     ):
         self.opti.set_initial(self.dt, dt)
-
+        print(f"Initial dt: {dt}")
+        print(f"Num steps : {self.N} initial path length: {len(initial_path)}")
         for i in range(self.N):
             self.opti.set_initial(self.x[0:3, i], initial_path[i].x)
             self.opti.set_initial(self.x[3:6, i], initial_path[i].v)
@@ -428,8 +428,18 @@ class RRTPathOptimization:
 
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
-
-        sol = self.opti.solve_limited()
+        try:
+            sol = self.opti.solve_limited()
+        except RuntimeError as e:
+            np.set_printoptions(precision=3, suppress=True)
+            self.opti.debug.show_infeasibilities()
+            print(f"x {self.opti.debug.value(self.x)}")
+            print(f"u {self.opti.debug.value(self.u)}")
+            print(f"dt {self.opti.debug.value(self.dt)}")
+            print(f"Cost {self.opti.debug.value(self.cost)}")
+            print(f"Error in optimization: {e}")
+            
+            sol = None
         return sol
 
     def convexOptimization(
