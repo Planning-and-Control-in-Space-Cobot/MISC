@@ -81,7 +81,7 @@ def drawEnvironmentAndObstacles(environment, obstacles):
     pv_.show()
 
     return pv_
-            
+
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -138,7 +138,7 @@ def main():
     originalPosition = path["positions"]
     originalOrientation = path["orientations"]
     initialPath = [
-        OptimizationState(originalPosition[i], originalOrientation[i])
+        OptimizationState(originalPosition[i], originalOrientation[i], i=i)
         for i in range(len(originalPosition))
     ]
 
@@ -148,9 +148,9 @@ def main():
     maxW = np.array([2, 2, 2])
     dt = 0.2
 
-    #for i in range(len(initialPath) - 1):
-    #    initialPath[i].v = np.clip((initialPath[i+1].x - initialPath[i].x) / dt / 2, minV, maxV)
-    #    print(f"v: {initialPath[i].v}")
+    for i in range(len(initialPath) - 1):
+        initialPath[i].v = np.clip((initialPath[i+1].x - initialPath[i].x) / dt / 2, minV, maxV)
+        print(f"i{i} v: {initialPath[i].v}")
         #initialPath[i].w = np.clip((initialPath[i+1] - initialPath[i]) / dt, minW, maxW)
 
     print("Creating Robot object")
@@ -184,87 +184,102 @@ def main():
 
     # stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     # stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
-
-    numStepsOptimized = 10 # Number of steps from the RRT considered by the optimization problem at each iteration
-    numTimesOptimized = 3 # Number of times we need to optimize the trajectory succefully before moving to the next step
+    
+    numOptimizedSteps = 10
+    numExtraSteps = 1
+    numTimesOptimized = 5
     rrtOpt = RRTPathOptimization(
         stateLowerBound, stateUpperBound, environment, robot
     )
 
-    #startStep = 0
-    #startPosition = optimizationPath[0]
-    #prev_u = np.zeros((6, len(initialPath[0:numStepsOptimized])))
-    """    
-    while startStep < len(initialPath) - numStepsOptimized:
-        numSuccesfulOptimizations = 0
+    prevU = np.zeros((6, numOptimizedSteps + numExtraSteps))
+    dt = 0.2
+    windowStart = 0
+    optimizedPath = []
+    prevUs = []
+    dts = []
+    _initialPath = initialPath.copy()
+    obstacles, maxDistances, _, _ = robot.getObstacles(environment, _initialPath[0:numOptimizedSteps], [], [], [])
+    np.set_printoptions(precision=3, suppress=True, linewidth=120)
+    while len(optimizedPath) != len(initialPath):
+        numValidOptimizations = 0
+        while numValidOptimizations < numTimesOptimized:
+            print(f"Optimizing path window going from {windowStart} to {windowStart + numOptimizedSteps} with {numExtraSteps} extra steps for continuity. {numValidOptimizations}")
+            optimizationPath = _initialPath[windowStart:windowStart + numOptimizedSteps]             
+            for i, p in enumerate(optimizationPath):
+                print(f"i {i} x {p.x} q {trf.Rotation.from_quat(p.q).as_euler('xyz', degrees=True)} v {p.v} w {p.w} u {p.u.T}")
+            if windowStart + numOptimizedSteps + numExtraSteps < len(_initialPath):
+                extraSteps = _initialPath[windowStart + numOptimizedSteps:windowStart + numOptimizedSteps + numExtraSteps]
+            else:
+                extraSteps = _initialPath[windowStart + numOptimizedSteps:-1]
+                extraSteps.extend((windowStart + numOptimizedSteps + numExtraSteps - len(_initialPath)) * [initialPath[-1]])
 
-        while numSuccesfulOptimizations < numTimesOptimized:
-            endPosition = optimizationPath[startStep + numStepsOptimized]
             xi = np.zeros(13)
-            xf = np.zeros(13)
-            xi[0:3] = startPosition.x
-            xi[6:10] = startPosition.q
-            xf[0:3] = endPosition.x
-            xf[6:10] = endPosition.q
-            obstacles, maxDistances = computeObstacles(
-                environment, robot, optimizationPath[startStep:startStep + numStepsOptimized]
-            )
-
-            print(f"Optimizing path from step {startStep} to {startStep + numStepsOptimized}")
-            rrtOpt.setup_optimization(
-                optimizationPath[startStep:startStep + numStepsOptimized],
-                obstacles,
-                maxDistances,
-                prev_u,
-                xi=xi,
-                xf=xf,
-            )
-            sol = rrtOpt.optimize(
-                optimizationPath[startStep:startStep + numStepsOptimized],
-                dt=0.2,
-                prev_u=prev_u,
-            )
+            xi[0:3] = optimizationPath[0].x
+            xi[3:6] = optimizationPath[0].v
+            xi[6:10] = optimizationPath[0].q
+            print(f"xi {xi}")
+            print(f"Len Obstacles: {len(obstacles)}")
+            rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, prevU[:, windowStart:windowStart + numOptimizedSteps], extraSteps, xi=xi)
+            sol = rrtOpt.optimize(optimizationPath, extraSteps, dt, prevU)
             _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
 
-            numCollisions = 0
-            for j, p in enumerate(_optimizationPath):
-                x = p.x
-                q = p.q
-                collision, depth, _, nearestPointObstacle, normal = environment.collide(
-                    robot.fcl_obj, x, trf.Rotation.from_quat(q)
-                )
+            _obstacles, _maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
+                environment, 
+                _optimizationPath,
+                _initialPath[windowStart:windowStart + numOptimizedSteps],
+                obstacles,
+                maxDistances
+            )
 
-                if collision:
-                    numCollisions += 1
-                    break
-            if numCollisions == 0:
-                numSuccesfulOptimizations += 1
-                optimizationPath[startStep:startStep + numStepsOptimized] = _optimizationPath
-                prev_u = _prev_u
+            if not anyCollision:
+                numValidOptimizations += 1
+                _initialPath[windowStart:windowStart + numOptimizedSteps] = _optimizationPath
+                print(f"prevU {prevU.shape} _prev_u{_prev_u.shape} windowStart {windowStart} numOptimizedSteps {numTimesOptimized}")
+                prevU[:, 0:numOptimizedSteps] = _prev_u[:, 0:numOptimizedSteps]
                 dt = _dt
-
-                print(f"Succesfully optimized path from step {startStep} to {startStep + numStepsOptimized} in iteration {numSuccesfulOptimizations}")
-            else:
-                collisionObstacles = []
-                for j, p in enumerate(_optimizationPath):
-                    x = p.x
-                    q = p.q
-                    collision, depth, _, nearestPointObstacle, normal = environment.collide(
-                        robot.fcl_obj, x, trf.Rotation.from_quat(q)
+                #pv_ = rrtOpt.visualize_trajectory(
+                #    initialPath[windowStart:windowStart + numOptimizedSteps],
+                #    _initialPath[windowStart:windowStart + numOptimizedSteps],
+                #    environment.voxel_mesh,
+                #)
+                #pv_.show()
+                if numValidOptimizations == numTimesOptimized:
+                    if windowStart % 10 == 0:
+                        pv_ = rrtOpt.visualize_trajectory(
+                            initialPath, optimizedPath, environment.voxel_mesh)
+                        for p in optimizedPath:
+                            print(f"path : {p.x} {trf.Rotation.from_quat(p.q).as_euler("xyz", degrees=True)}")
+                        pv_.show()
+                    
+                     
+                    windowStart += 1
+                    obstacles, maxDistances, _, _ = robot.getObstacles(
+                        environment, 
+                        _optimizationPath,
+                        _initialPath[windowStart:windowStart + numOptimizedSteps],
+                        obstacles,
+                        maxDistances
                     )
+                    optimizedPath.append(_optimizationPath[0])
+                    prevUs.append(_prev_u[:, 0])
+                    dts.append(_dt)
 
-                    if collision:
-                        print(f"Collision Depth: {depth}")
-                        collisionObstacles.append(Obstacle(
-                            nearestPointObstacle, -normal, 0, j,
-                        ))
-                obstacles.extend(collisionObstacles)
-                print(f"Failed to optimize path from step {startStep} to {startStep + numStepsOptimized} in iteration {numSuccesfulOptimizations}")
+            else:
+                #drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
+                
+                obstacles = _obstacles
 
-        startStep += 1
-        start = optimizationPath[startStep]
+
     """
+    optimizationPath = initialPath[] 
+    finalPath = []
+    while True:
+        numSucessfulOptimizations = 0
+        while numSucessfulOptimizations < numTimesOptimized:
 
+
+    """ 
 
     optimizationPath = initialPath.copy()
     xi = np.zeros(13)

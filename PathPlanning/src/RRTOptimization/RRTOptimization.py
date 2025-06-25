@@ -40,7 +40,7 @@ class OptimizationState:
     ):
         self.x = x  # position
         self.v = v  # velocity
-        self.q = q  # quaternion
+        self.q = q / np.linalg.norm(q)  # quaternion
         self.w = w  # angular velocity
         self.u = u  # control inputs
         self.i = i  # index of the state in the optimization problem
@@ -79,7 +79,6 @@ class RRTPathOptimization:
         obstacleMaxDistances : np.ndarray, 
         numObstacles : int,
         xi : np.ndarray, 
-        xf : np.ndarray 
     ):
         """Check the validity of the data passed to the optimization problem.
 
@@ -236,23 +235,6 @@ class RRTPathOptimization:
             print(f"Invalid initial state {xi}, out of bounds")
             return False
         
-        ## Check final state
-        if xf.shape != (13,):
-            print("Invalid final state shape, expected (13,)")
-            return False
-        if not np.allclose(np.linalg.norm(xf[6:10]), 1, atol = 1e-1):
-            print(f"Invalid Quaternion in final state {xf[6:10]}")
-            return False
-        if np.any(np.isnan(xf)):
-            print("NaN values in final state")
-            return False
-        if np.any(np.isinf(xf)):
-            print("Inf values in final state")
-            return False
-        ## finalState must be within the bounds
-        if np.any(xf < minStateValues) or np.any(xf > maxStateValues):
-            print(f"Invalid final state {xf}, out of bounds")
-            return False
         return True
 
     def setup_optimization(
@@ -261,8 +243,8 @@ class RRTPathOptimization:
         obstacles : List[Obstacle],
         maxDistances : List[float],
         initialU : np.ndarray,
+        nextSteps : List[OptimizationState] = [],
         xi: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
-        xf: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
     ):
         """Setups the optimization problem, this function only needs to be called
         once, while we maintain the same number of obstacles and collisions
@@ -277,9 +259,11 @@ class RRTPathOptimization:
         Returns:
             None
         """
+        xi[6:10] /= np.linalg.norm(xi[6:10])
+        
+
+
         ## Check data validity 
-        import time 
-        startTime = time.time()
         if not self.checkDataValidity(
             self.stateMinValues, 
             self.stateMaxValues, 
@@ -291,39 +275,29 @@ class RRTPathOptimization:
             np.array(maxDistances),
             len(obstacles),
             xi,
-            xf
         ):
             raise ValueError("Invalid data passed to the optimization problem")     
-        print(f"Data validity check took {time.time() - startTime:.2f} seconds")
-
-
 
         self.opti = ca.Opti()
         self.N = len(initial_path)
+        self.numExtraSteps = len(nextSteps)
 
         # Define the optimization variables
         self.x = self.opti.variable(
             13, self.N
         )  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
-        self.u = self.opti.variable(6, self.N)
+        self.u = self.opti.variable(6, self.N + self.numExtraSteps)
     
-        #self.initialPos = self.opti.parameter(3, self.N - 2)
-        #self.maxDistance =  self.opti.parameter(1, self.N - 2)
+        # The extra steps are used to ensure continuity between each window in the optimization problem
+        self.extraStepsState = self.opti.parameter(13, self.numExtraSteps)
 
-        # The distance to the obstacle in each of the steps
-        #self.obstacleDistance = self.opti.parameter(
-        #    1, self.N
-        #)  # Minimum distance to the obstacles in each step in the path (does not matter if we sample the robot or not!)
-
+        # Delta time must be between 0 and 0.5 seconds 
         self.dt = self.opti.variable(1)
         self.opti.subject_to(self.opti.bounded(0, self.dt, 0.5))
 
         # Optimization parameters
-        self.xf = self.opti.parameter(13)
         self.xi = self.opti.parameter(13)
         self.opti.set_value(self.xi, xi)
-        self.opti.set_value(self.xf, xf)
-        #self.opti.subject_to(self.x[:, -1] == self.xf)  # Initial State
         self.opti.subject_to(self.x[:, 0] == self.xi)  # Final State
 
         # Dynamic constraints
@@ -334,8 +308,17 @@ class RRTPathOptimization:
                 == self.robot.f(self.x[:, i], self.u[:, i], self.dt)
             )
 
+        #Last Step
+        self.opti.subject_to(
+            self.extraStepsState == self.robot.f(self.x[:, -1], self.u[:, self.N], self.dt
+            )
+        )
+        #self.cost = 0
+        #for i in range(1, self.numExtraSteps - 1):
+        #    self.cost += 1e2 * (ca.sumsqr(self.extraStepsState[:, i+1] - self.robot.f(self.extraStepsState[:, i], self.u[:, self.N+1], self.dt)))
+
         # Obstacle avoidance constraints - First we need to get the obstacle of the initial path
-        for i in range(1, self.N - 1):
+        for i in range(1, self.N):
             # Get the decision variables for the current step
             pos = self.x[0:3, i]
             R_q = sc.Rotation.from_quat(self.x[6:10, i])
@@ -371,31 +354,30 @@ class RRTPathOptimization:
         #self.opti.subject_to(
 
         # Define the cost function
-        self.cost = 0
         self.cost += 10000 * self.dt
         for i in range(self.N):
             self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
         for i in range(1, self.N - 1):
-            self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
-                self.x[0:3, i] - self.xf[0:3]
+            self.cost += (self.x[0:3, i] - initial_path[-1].x).T @ (
+                self.x[0:3, i] - initial_path[-1].x
             )
 
         self.opti.minimize(self.cost)
 
         self.opti.solver(
-            "ipopt",
-            {
-                "print_time": False
-            },
-            {
-                "print_level": 0,
-                "max_iter": 100,
-                "warm_start_init_point": "yes",  # Use initial guess
-                "linear_solver": "ma97",
-                "mu_strategy": "adaptive",
-                "hessian_approximation": "limited-memory",
-            },
+            "fatrop",
+           # {
+           #     "print_time": False
+           # },
+           # {
+           #     "print_level": 0,
+           #     "max_iter": 100,
+           #     "warm_start_init_point": "yes",  # Use initial guess
+           #     "linear_solver": "ma97",
+           #     "mu_strategy": "adaptive",
+           #     "hessian_approximation": "limited-memory",
+           # },
         )
 
         #self.opti.solver(
@@ -414,6 +396,7 @@ class RRTPathOptimization:
     def optimize(
         self,
         initial_path: List[OptimizationState],
+        extraSteps : List[OptimizationState],
         dt: float = 1,
         prev_u: np.ndarray = None,
     ):
@@ -425,6 +408,12 @@ class RRTPathOptimization:
             self.opti.set_initial(self.x[3:6, i], initial_path[i].v)
             self.opti.set_initial(self.x[6:10, i], initial_path[i].q)
             self.opti.set_initial(self.x[10:13, i], initial_path[i].w)
+        
+        for i, s in enumerate(extraSteps):
+            self.opti.set_value(self.extraStepsState[0:3, i], s.x)
+            self.opti.set_value(self.extraStepsState[3:6, i], s.v)
+            self.opti.set_value(self.extraStepsState[6:10, i], s.q)
+            self.opti.set_value(self.extraStepsState[10:13, i], s.w)
 
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
@@ -433,12 +422,15 @@ class RRTPathOptimization:
         except RuntimeError as e:
             np.set_printoptions(precision=3, suppress=True)
             self.opti.debug.show_infeasibilities()
+            breakpoint()
             print(f"x {self.opti.debug.value(self.x)}")
             print(f"u {self.opti.debug.value(self.u)}")
             print(f"dt {self.opti.debug.value(self.dt)}")
             print(f"Cost {self.opti.debug.value(self.cost)}")
+            print("Primal infeasibility:", self.opti.debug.value(self.opti.nlp_stats()['inf_pr']))
+            print("Dual infeasibility:", self.opti.debug.value(self.opti.nlp_stats()['inf_du']))
             print(f"Error in optimization: {e}")
-            
+        
             sol = None
         return sol
 
