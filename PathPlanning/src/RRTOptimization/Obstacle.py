@@ -8,7 +8,7 @@ class Obstacle:
         normal : np.ndarray, 
         distance : float,
         iteration : int,
-        safetyMargin : float = 0.1):
+        safetyMargin : float = 0.01):
         '''
             This class represents an obstacle in the optimization problem
 

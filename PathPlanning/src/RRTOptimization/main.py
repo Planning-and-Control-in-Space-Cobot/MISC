@@ -185,14 +185,14 @@ def main():
     # stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     # stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
     
-    numOptimizedSteps = 10
-    numExtraSteps = 1
+    numOptimizedSteps = 20 
+    stride = int(numOptimizedSteps / 2)
     numTimesOptimized = 5
     rrtOpt = RRTPathOptimization(
         stateLowerBound, stateUpperBound, environment, robot
     )
 
-    prevU = np.zeros((6, numOptimizedSteps + numExtraSteps))
+    prevU = np.zeros((6, numOptimizedSteps))
     dt = 0.2
     windowStart = 0
     optimizedPath = []
@@ -201,85 +201,99 @@ def main():
     _initialPath = initialPath.copy()
     obstacles, maxDistances, _, _ = robot.getObstacles(environment, _initialPath[0:numOptimizedSteps], [], [], [])
     np.set_printoptions(precision=3, suppress=True, linewidth=120)
-    while len(optimizedPath) != len(initialPath):
-        numValidOptimizations = 0
-        while numValidOptimizations < numTimesOptimized:
-            print(f"Optimizing path window going from {windowStart} to {windowStart + numOptimizedSteps} with {numExtraSteps} extra steps for continuity. {numValidOptimizations}")
-            optimizationPath = _initialPath[windowStart:windowStart + numOptimizedSteps]             
-            for i, p in enumerate(optimizationPath):
-                print(f"i {i} x {p.x} q {trf.Rotation.from_quat(p.q).as_euler('xyz', degrees=True)} v {p.v} w {p.w} u {p.u.T}")
-            if windowStart + numOptimizedSteps + numExtraSteps < len(_initialPath):
-                extraSteps = _initialPath[windowStart + numOptimizedSteps:windowStart + numOptimizedSteps + numExtraSteps]
+    """ 
+    while len(optimizedPath) < len(initialPath):
+        print(f"Optimizing path going from {windowStart} to {windowStart + numOptimizedSteps}")
+        numSuccessfulOptimizations = 0
+        while numSuccessfulOptimizations < numTimesOptimized:
+            if windowStart + numOptimizedSteps < len(_initialPath):
+                optimizationPath = _initialPath[windowStart:windowStart + numOptimizedSteps]
             else:
-                extraSteps = _initialPath[windowStart + numOptimizedSteps:-1]
-                extraSteps.extend((windowStart + numOptimizedSteps + numExtraSteps - len(_initialPath)) * [initialPath[-1]])
-
+                optimizationPath = _initialPath[windowStart:]
+                optimizationPath.extend((numOptimizedSteps - len(optimizationPath)) * [initialPath[-1]])
+            
             xi = np.zeros(13)
             xi[0:3] = optimizationPath[0].x
             xi[3:6] = optimizationPath[0].v
             xi[6:10] = optimizationPath[0].q
-            print(f"xi {xi}")
-            print(f"Len Obstacles: {len(obstacles)}")
-            rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, prevU[:, windowStart:windowStart + numOptimizedSteps], extraSteps, xi=xi)
-            sol = rrtOpt.optimize(optimizationPath, extraSteps, dt, prevU)
-            _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
+            xf = np.zeros(13)
+            xf[0:3] = _initialPath[-1].x
+            xf[3:6] = _initialPath[-1].v
+            xf[6:10] = _initialPath[-1].q
 
+            #print(f"xi {xi}")
+            #print(f"xf {xf}")
+            #print(f"Len Obstacles: {len(obstacles)}")
+            rrtOpt.setup_optimization(
+                optimizationPath, 
+                obstacles, 
+                maxDistances, 
+                prevU, 
+                xi, 
+                xf
+            )
+            print(f"{Fore.BLUE} Window Start: {windowStart} numOptimization:{numSuccessfulOptimizations} {Style.RESET_ALL}")
+
+            sol = rrtOpt.optimize(optimizationPath, dt, prevU)
+            _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
+            print(f"{Fore.YELLOW}Cost: {cost}{Style.RESET_ALL}")
+    
             _obstacles, _maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
                 environment, 
-                _optimizationPath,
-                _initialPath[windowStart:windowStart + numOptimizedSteps],
-                obstacles,
+                _optimizationPath, 
+                optimizationPath, 
+                obstacles, 
                 maxDistances
             )
 
             if not anyCollision:
-                numValidOptimizations += 1
-                _initialPath[windowStart:windowStart + numOptimizedSteps] = _optimizationPath
-                print(f"prevU {prevU.shape} _prev_u{_prev_u.shape} windowStart {windowStart} numOptimizedSteps {numTimesOptimized}")
-                prevU[:, 0:numOptimizedSteps] = _prev_u[:, 0:numOptimizedSteps]
+                numSuccessfulOptimizations += 1
+                print(
+                    f"{Fore.GREEN}No collision detected during optimization! windowStart {windowStart} numOptimizedSteps {numSuccessfulOptimizations}{Style.RESET_ALL}"
+                )
+                prevU = _prev_u
                 dt = _dt
-                #pv_ = rrtOpt.visualize_trajectory(
-                #    initialPath[windowStart:windowStart + numOptimizedSteps],
-                #    _initialPath[windowStart:windowStart + numOptimizedSteps],
-                #    environment.voxel_mesh,
-                #)
-                #pv_.show()
-                if numValidOptimizations == numTimesOptimized:
+                _initialPath[windowStart:windowStart + numOptimizedSteps] = _optimizationPath
+
+
+                if numSuccessfulOptimizations == numTimesOptimized:
+                    print(f"{Fore.GREEN} InitialPaht Len: {len(initialPath)} OptimizedPath Len: {len(optimizedPath)} {Style.RESET_ALL}")
                     if windowStart % 10 == 0:
                         pv_ = rrtOpt.visualize_trajectory(
                             initialPath, optimizedPath, environment.voxel_mesh)
                         for p in optimizedPath:
-                            print(f"path : {p.x} {trf.Rotation.from_quat(p.q).as_euler("xyz", degrees=True)}")
+                            print(f"path : {p.x} {trf.Rotation.from_quat(p.q).as_euler('xyz', degrees=True)}")
                         pv_.show()
-                    
-                     
-                    windowStart += 1
+                    prevUs.append(_prev_u[:, 0:stride])
+                    dts.append(dt)
+                    optimizedPath.extend(_optimizationPath[0:stride])
+
+                    prevU[:, :-stride] = prevU[:, stride:]
+                    prevU[:, -stride:] = np.zeros((6,stride))
+
+                    windowStart += stride 
                     obstacles, maxDistances, _, _ = robot.getObstacles(
-                        environment, 
+                        environment,
                         _optimizationPath,
                         _initialPath[windowStart:windowStart + numOptimizedSteps],
                         obstacles,
                         maxDistances
                     )
-                    optimizedPath.append(_optimizationPath[0])
-                    prevUs.append(_prev_u[:, 0])
-                    dts.append(_dt)
-
             else:
-                #drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
-                
+                print(
+                    f"{Fore.RED}Collision detected during optimization!{Style.RESET_ALL}"
+                )
+                drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
+
                 obstacles = _obstacles
-
-
     """
-    optimizationPath = initialPath[] 
-    finalPath = []
-    while True:
-        numSucessfulOptimizations = 0
-        while numSucessfulOptimizations < numTimesOptimized:
 
-
-    """ 
+    optimizationPath = initialPath.copy()
+    xi = np.zeros(13)
+    xf = np.zeros(13)
+    xi[0:3] = optimizationPath[0].x
+    xi[6:10] = optimizationPath[0].q
+    numValidOptimizations = 0
 
     optimizationPath = initialPath.copy()
     xi = np.zeros(13)

@@ -53,7 +53,18 @@ class OptimizationState:
         """
         return np.hstack([self.x, self.v, self.q, self.w])
 
+    def distance(self, other : "OptimizationState") -> float:
+        """Calculate the distance between this state and another state
+        
+        Parameters:
+            other (OptimizationState): The other state to compare with  
+        
+        Returns:
+            float: The distance between the two states
+        """
 
+        return np.linalg.norm(self.x - other.x) + np.linalg.norm(self.v - other.v) + \
+            (1 - np.dot(self.q, other.q)) ** 2 + np.linalg.norm(self.w - other.w)
 class RRTPathOptimization:
     def __init__(
         self,
@@ -243,8 +254,8 @@ class RRTPathOptimization:
         obstacles : List[Obstacle],
         maxDistances : List[float],
         initialU : np.ndarray,
-        nextSteps : List[OptimizationState] = [],
-        xi: np.ndarray = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
+        xi: np.ndarray = np.ndarray([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
+        xf: np.ndarray = np.ndarray([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
     ):
         """Setups the optimization problem, this function only needs to be called
         once, while we maintain the same number of obstacles and collisions
@@ -253,6 +264,7 @@ class RRTPathOptimization:
             initial_path (List[OptimizationState]): initial path to optimize
             obstacles (List[Obstacle]): List of obstacle in the environment we need to avoid
             maxDistance (List[Float]): List of the maximum distance to the obstacle in each step (the max distance is the maximum of the minimum distance)
+            initialU (np.ndarray): Initial actuation values
             xi (np.ndarray): initial state of the robot
             xf (np.ndarray): final state of the robot
 
@@ -260,8 +272,7 @@ class RRTPathOptimization:
             None
         """
         xi[6:10] /= np.linalg.norm(xi[6:10])
-        
-
+        xf[6:10] /= np.linalg.norm(xf[6:10])
 
         ## Check data validity 
         if not self.checkDataValidity(
@@ -280,39 +291,34 @@ class RRTPathOptimization:
 
         self.opti = ca.Opti()
         self.N = len(initial_path)
-        self.numExtraSteps = len(nextSteps)
-
+        
         # Define the optimization variables
         self.x = self.opti.variable(
             13, self.N
         )  # [3 pos; 3 vel; 4 quat; 3 ang_vel]
-        self.u = self.opti.variable(6, self.N + self.numExtraSteps)
+        self.u = self.opti.variable(6, self.N)
     
-        # The extra steps are used to ensure continuity between each window in the optimization problem
-        self.extraStepsState = self.opti.parameter(13, self.numExtraSteps)
-
         # Delta time must be between 0 and 0.5 seconds 
         self.dt = self.opti.variable(1)
-        self.opti.subject_to(self.opti.bounded(0, self.dt, 0.5))
+        self.opti.subject_to(self.opti.bounded(0, self.dt, 0.2))
 
         # Optimization parameters
         self.xi = self.opti.parameter(13)
         self.opti.set_value(self.xi, xi)
-        self.opti.subject_to(self.x[:, 0] == self.xi)  # Final State
+        self.opti.subject_to(self.x[0:10, 0] == self.xi[0:10])  # Final State
 
         # Dynamic constraints
         for i in range(self.N - 1):
             # x[k+1] = f(x[k], u[k], dt)
             self.opti.subject_to(
                 self.x[:, i + 1]
-                == self.robot.f(self.x[:, i], self.u[:, i], self.dt)
+                == self.robot.f(self.x[:, i], self.u[:, i], self.dt) 
             )
 
-        #Last Step
-        self.opti.subject_to(
-            self.extraStepsState == self.robot.f(self.x[:, -1], self.u[:, self.N], self.dt
-            )
-        )
+        # _xf = self.opti.parameter(13)
+        #self.opti.subject_to(self.x[:, -1] == xf)  # Final State
+        #self.opti.set_value(_xf, xf)
+
         #self.cost = 0
         #for i in range(1, self.numExtraSteps - 1):
         #    self.cost += 1e2 * (ca.sumsqr(self.extraStepsState[:, i+1] - self.robot.f(self.extraStepsState[:, i], self.u[:, self.N+1], self.dt)))
@@ -327,6 +333,7 @@ class RRTPathOptimization:
             maxDistance = maxDistances[i]
             _obstacles = [o for o in obstacles if o.iteration == i]
             for obstacle in _obstacles:
+                print(f"Obstacle {obstacle.iteration} at step {i} with closest point {obstacle.closestPointObstacle} and normal {obstacle.normal} and safety margin {obstacle.safetyMargin}")
                 # half plane constraints:
                 for v in self.robot.getVertices():
                     # How to know if the signal for the half plane is positive or negative?
@@ -354,30 +361,35 @@ class RRTPathOptimization:
         #self.opti.subject_to(
 
         # Define the cost function
+        self.cost = 0
         self.cost += 10000 * self.dt
         for i in range(self.N):
-            self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
+            self.cost += ca.sumsqr(self.u[:, i]) * 0.1  # Actuation cost 
 
-        for i in range(1, self.N - 1):
-            self.cost += (self.x[0:3, i] - initial_path[-1].x).T @ (
-                self.x[0:3, i] - initial_path[-1].x
-            )
+        #for i in range(1, self.N - 1):
+        #    self.cost += (self.x[0:3, i] - xf[0:3]).T @ (
+        #        self.x[0:3, i] - xf[0:3]
+        #    )
 
         self.opti.minimize(self.cost)
 
         self.opti.solver(
-            "fatrop",
-           # {
-           #     "print_time": False
-           # },
-           # {
-           #     "print_level": 0,
-           #     "max_iter": 100,
-           #     "warm_start_init_point": "yes",  # Use initial guess
-           #     "linear_solver": "ma97",
-           #     "mu_strategy": "adaptive",
-           #     "hessian_approximation": "limited-memory",
-           # },
+            "ipopt",
+            {
+                #"print_time": False
+            },
+            {
+                #"print_level": 0,
+                "tol": 1e-6,
+                "constr_viol_tol": 1e-6,
+                "acceptable_tol": 1e-4,
+                "mu_strategy": "adaptive",
+                "max_iter": 100,
+                "sb" : "yes",  # Use sparse block structure
+                "warm_start_init_point": "yes",  # Use initial guess
+                "linear_solver": "ma97",
+                "nlp_scaling_method": "equilibration-based"
+            },
         )
 
         #self.opti.solver(
@@ -396,10 +408,10 @@ class RRTPathOptimization:
     def optimize(
         self,
         initial_path: List[OptimizationState],
-        extraSteps : List[OptimizationState],
         dt: float = 1,
         prev_u: np.ndarray = None,
     ):
+
         self.opti.set_initial(self.dt, dt)
         print(f"Initial dt: {dt}")
         print(f"Num steps : {self.N} initial path length: {len(initial_path)}")
@@ -409,126 +421,47 @@ class RRTPathOptimization:
             self.opti.set_initial(self.x[6:10, i], initial_path[i].q)
             self.opti.set_initial(self.x[10:13, i], initial_path[i].w)
         
-        for i, s in enumerate(extraSteps):
-            self.opti.set_value(self.extraStepsState[0:3, i], s.x)
-            self.opti.set_value(self.extraStepsState[3:6, i], s.v)
-            self.opti.set_value(self.extraStepsState[6:10, i], s.q)
-            self.opti.set_value(self.extraStepsState[10:13, i], s.w)
-
         if prev_u is not None:
             self.opti.set_initial(self.u, prev_u)
         try:
             sol = self.opti.solve_limited()
         except RuntimeError as e:
+            import matplotlib.pyplot as plt
+
             np.set_printoptions(precision=3, suppress=True)
-            self.opti.debug.show_infeasibilities()
-            breakpoint()
+            #self.opti.debug.show_infeasibilities()
+
+            # Extrair Jacobiano
+            g = self.opti.g
+            x = self.opti.x
+
+            J = ca.jacobian(g, x)
+            fJ = ca.Function("J", [x], [J])
+            J_val = fJ(self.opti.debug.value(x)).full()
+
+            # Diagnóstico numérico
+            rank = np.linalg.matrix_rank(J_val)
+            cond = np.linalg.cond(J_val)
+            print(f"Jacobian shape: {J_val.shape}")
+            print(f"Jacobian rank: {rank}")
+            print(f"Jacobian condition number: {cond:.2e}")
+
+            # Visualização de esparsidade
+            plt.figure(figsize=(10, 6))
+            plt.spy(J_val, markersize=1)
+            plt.title("Jacobian Sparsity Pattern")
+            plt.xlabel("Decision Variables")
+            plt.ylabel("Constraints")
+            plt.show()
+
             print(f"x {self.opti.debug.value(self.x)}")
             print(f"u {self.opti.debug.value(self.u)}")
             print(f"dt {self.opti.debug.value(self.dt)}")
             print(f"Cost {self.opti.debug.value(self.cost)}")
-            print("Primal infeasibility:", self.opti.debug.value(self.opti.nlp_stats()['inf_pr']))
-            print("Dual infeasibility:", self.opti.debug.value(self.opti.nlp_stats()['inf_du']))
             print(f"Error in optimization: {e}")
         
             sol = None
         return sol
-
-    def convexOptimization(
-            self, 
-            initialPath : List[OptimizationState], 
-            obstacles : List[Obstacle],
-            maxDistances : List[float],
-            initialU : np.ndarray, 
-            dt,
-            xi = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
-            xf = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
-    ):
-        """Setup the convex optimization problem, this function only needs to be called
-        once, while we maintain the same number of obstacles and collisions
-
-        Parameters
-            initialPath (List[OptimizationState]): initial path to optimize
-            obstacles (List[Obstacle]): List of obstacle in the environment we need to avoid
-            maxDistance (List[Float]): List of the maximum distance to the obstacle in each step (the max distance is the maximum of the minimum distance)
-            xi (np.ndarray): initial state of the robot
-            xf (np.ndarray): final state of the robot
-
-        Returns:
-            None
-        """
-        self.optiLinear = ca.Opti()
-
-        self.uL = self.optiLinear.variable(6, self.N)
-        self.xL = self.optiLinear.variable(13, self.N)
-
-        x_sym = ca.MX.sym("x", 13)
-        u_sym = ca.MX.sym("u", 6)
-        A, B, f = self.robot.linearizedDynamics(x=x_sym, u=u_sym, dt=dt)
-
-        self.linearizedDynamics = ca.Function("linearizedDynamics",  [x_sym, u_sym], [A, B, f])
-
-
-        # Dynamic Constraints
-        for i in range(self.N - 1):
-            xNom = initialPath[i].get_state()
-            uNom = initialPath[i].u
-            Ak, Bk, Fk = self.linearizedDynamics(xNom, uNom)
-            self.optiLinear.subject_to(
-                self.xL[:, i+1] == self.xL[:, i] + Ak @ (self.xL[:, i] - xNom) 
-                    + Bk @ (self.uL[:, i] - uNom) + Fk
-            )
-
-        for i in range (self.N):
-            self.optiLinear.subject_to(
-                self.optiLinear.bounded(-3, self.uL[:, i], 3)
-            )
-            self.optiLinear.subject_to(
-                self.optiLinear.bounded(
-                    self.stateMinValues, self.xL[:, i], self.stateMaxValues
-                )
-            )
-            self.optiLinear.subject_to(ca.sumsqr(self.xL[6:10, i]) == 1)
-        
-        for i in range(1, self.N - 1):
-            obstacles = [o for o in obstacles if o.iteration == i]
-            pos = self.xL[0:3, i]
-            R_q = sc.Rotation.from_quat(self.xL[6:10, i])
-            
-            for obstacle in obstacles:
-                for v in self.robot.getVertices():
-                    self.optiLinear.subject_to(
-                        obstacle.normal.reshape((1, 3))
-                        @ (R_q.as_matrix() @ v + pos)
-                        > obstacle.normal.reshape((1, 3)) @ obstacle.closestPointObstacle.reshape((3, 1)) + obstacle.safetyMargin
-                    )
-            #self.optiLinear.subject_to(
-            #    ca.sumsqr(self.xL[0:3, i] - initialPath[i].x) < maxDistances[i]**2
-            #)
-        
-        self.optiLinear.subject_to(self.xL[:, -1] == xf)  # Final State
-        self.optiLinear.subject_to(self.xL[:, 0] == xi) # Initial State
-    
-        cost = 0
-        for i in range(self.N):
-            cost += self.uL[:, i].T @ 0.1 @ self.uL[:, i] # Actuation cost
-            cost += (self.xL[0:3, i] - xf[0:3]).T @ (
-                self.xL[0:3, i] - xf[0:3]
-            ) # Position cost
-            cost += 1 - ca.dot(self.xL[6:10, i], xf[6:10])**2 # Quat cost
-        self.optiLinear.minimize(cost)
-        
-        self.optiLinear.solver(
-            "sqpmethod"
-        )
-    
-        for i in range(self.N):
-            self.optiLinear.set_initial(self.xL[0:3, i], initialPath[i].x)
-            self.optiLinear.set_initial(self.xL[3:6, i], initialPath[i].v)
-            self.optiLinear.set_initial(self.xL[6:10, i], initialPath[i].q)
-            self.optiLinear.set_initial(self.xL[10:13, i], initialPath[i].w)
-            self.optiLinear.set_initial(self.uL[:, i], initialPath[i].u)
-        sol = self.optiLinear.solve()
 
     def getSolution(self, sol: ca.OptiSol):
         if sol is None:
@@ -568,9 +501,6 @@ class RRTPathOptimization:
                 mesh, color="green", opacity=0.5
             )
 
-
-
-
         for i, s in enumerate(optimized_path):
             if i not in steps:
                 continue
@@ -578,35 +508,6 @@ class RRTPathOptimization:
             plotter.add_mesh(
                 mesh, color="blue", opacity=0.5, show_edges=True
             )
-
-
-
-        #if obstacles is not None:
-        #    for obs in obstacles:
-        #        cube = obs.generateCube()
-        #        faces = np.array(
-        #            [
-        #                [4, 0, 1, 2, 3],
-        #                [4, 4, 5, 6, 7],
-        #                [4, 0, 1, 5, 4],
-        #                [4, 2, 3, 7, 6],
-        #                [4, 0, 3, 7, 4],
-        #                [4, 1, 2, 6, 5],
-        #            ]
-        #        )
-        #        surf = pv.PolyData(cube.T, faces=faces)
-        #        plotter.add_mesh(
-        #            surf, color="yellow", opacity=0.3, style="wireframe"
-        #        )
-        #        plotter.add_points(
-        #            obs.closestPointObstacle, color="orange", point_size=10
-        #        )
-        #        plotter.add_arrows(
-        #            obs.closestPointObstacle[np.newaxis, :],
-        #            obs.normal[np.newaxis, :],
-        #            mag=0.3,
-        #            color="orange",
-        #        )
 
         plotter.add_axes()
         return plotter

@@ -184,7 +184,10 @@ class Robot(Model):
                         point, prevP + trf.Rotation.from_quat(prevPath.q).as_matrix().T @ t
                     )
 
+
                     normal = (pt1 - nearestPointObstacle) / np.linalg.norm(pt1 - nearestPointObstacle)
+
+                    print(f"Collision at {i} in {nearestPointObstacle} {normal} ")
                     previousObstacles.append(Obstacle(nearestPointObstacle, normal, minDistance, i))
                     collisionObstacles.append(
                         Obstacle(nearestPointObstacle, normal, minDistance, i)
@@ -356,11 +359,13 @@ class Robot(Model):
             )
             return quat_mul(q_, q)
 
+        # Update the state using the Euler method
         x, v, q, w, F, M = unflat(state, u)
         R = sc.Rotation.from_quat(q)
         x_next = x + v * dt
         v_next = v + dt * (1 / self.m) * R.as_matrix() @ F
         q_next = quat_int(q, w, dt)
+        q_next = q_next / ca.norm_2(q_next)  # Normalize quaternion
         w_next = w + dt * ca.inv(self.J) @ (M - ca.cross(w, self.J @ w))
         return flat(x_next, v_next, q_next, w_next)
 
