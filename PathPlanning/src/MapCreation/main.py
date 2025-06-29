@@ -5,15 +5,34 @@ import numpy as np
 import scipy.spatial.transform as trf
 
 import os
-import sys
-
 import argparse
 
 from Environment import EnvironmentHandler
 
-import coal
 
-def o3d_to_pv(o3d_mesh):
+def o3d_to_pv(o3d_mesh : o3d.geometry.TriangleMesh) -> pv.PolyData:
+    """ Convert and open3d mesh into a pyvista mesh.
+
+    Converts an open3d triangular mesh, into a mesh that can be used inside
+    a pyvista plot.
+
+
+    Parameters
+       o3d_mesh (o3d.geometry.TriangleMesh): The open3d mesh to convert.
+       
+    Returns
+       pv.PolyData: The converted mesh in pyvista format.
+
+    Raises
+         TypeError: If the input is not an open3d.geometry.TriangleMesh object.
+         ValueError: If the input mesh does not have triangles.
+    """
+    if not type(o3d_mesh) is o3d.geometry.TriangleMesh:
+        raise TypeError("Input must be an open3d.geometry.TriangleMesh object")
+    
+    if not o3d_mesh.has_triangles():
+        raise ValueError("Input mesh must have triangles")
+    
     # Extract vertices and faces
     vertices = np.asarray(o3d_mesh.vertices)
     faces = np.asarray(o3d_mesh.triangles)
@@ -27,7 +46,23 @@ def o3d_to_pv(o3d_mesh):
     return pv_mesh
 
 
-def strToBool(value):
+def strToBool(value : str) -> bool:
+    """Convert a string to a boolean value.
+
+    This function converts a string representation of a boolean value
+    to an actual boolean. It accepts various common representations
+    such as 'yes', 'no', 'true', 'false', 't', 'f', 'y', 'n', '1', and '0'.
+
+    Parameters
+        value (str): The string to convert to a boolean.
+    
+    Returns:
+        bool: The converted boolean value.
+
+    Raises:
+        argparse.ArgumentTypeError: If the string does not represent a valid 
+        boolean value.
+    """
     if isinstance(value, bool):
         return value
     if value.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -37,9 +72,14 @@ def strToBool(value):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def tmesh_to_o3d(tmesh : trimesh.Trimesh):
-    """
-    Convert a trimesh object to an open3d mesh object.
+def tmesh_to_o3d(tmesh : trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
+    """ Convert a trimesh object to an open3d mesh object.
+
+    Parameters
+        tmesh (trimesh.Trimesh): The trimesh object to convert.
+            
+    Returns
+        o3d.geometry.TriangleMesh: The converted open3d mesh object.    
     """
     tmesh.export("temp_mesh.obj")
     o3d_mesh = o3d.io.read_triangle_mesh("temp_mesh.obj")
@@ -49,6 +89,13 @@ def tmesh_to_o3d(tmesh : trimesh.Trimesh):
 def sample_tmmesh(tmesh : trimesh.Trimesh, number_of_points=100000):
     """
     Sample points from a trimesh object.
+
+    Parameters
+        tmesh (trimesh.Trimesh): The trimesh object to sample points from.
+        number_of_points (int): The number of points to sample from the mesh.
+        
+    Returns:
+        o3d.geometry.PointCloud: A point cloud containing the sampled points.    
     """
     o3d_mesh = tmesh_to_o3d(tmesh)
     point_cloud = o3d_mesh.sample_points_poisson_disk(number_of_points=number_of_points)
@@ -196,36 +243,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    exit(0)
-
-
-
-pv_mesh = o3d_to_pv(o3d_mesh)
-
-pv_ = pv.Plotter()
-pv_.add_mesh(pv_mesh, show_edges=True, color='white', line_width=0.5, point_size=5, show_scalar_bar=False)
-
-_spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
-
-spaceCobot = _spaceCobot.copy()
-transform = np.eye(4)
-rot = trf.Rotation.from_euler('xyz', [0, 75, 0], degrees=True)
-pos = np.array([-0.375, 0.0, -3.0])
-transform[:3, :3] = rot.as_matrix()
-transform[:3, 3] = pos
-
-spaceCobot.transform(transform)
-pv_.add_mesh(spaceCobot, color='red', show_edges=True)
-
-spaceCobot = _spaceCobot.copy()
-rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
-pos = np.array([-0.375, 0.0, 3.0])
-transform[:3, :3] = rot.as_matrix()
-transform[:3, 3] = np.array([0.0, 3.0, 3.0]) 
-spaceCobot.transform(transform)
-pv_.add_mesh(spaceCobot, color='green', show_edges=True)
-
-
-pv_.show()
-
-
