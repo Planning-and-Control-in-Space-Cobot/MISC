@@ -1,34 +1,231 @@
+import trimesh
 import open3d as o3d
-import pyvista as pv 
-import trimesh as tm
+import pyvista as pv
 import numpy as np
+import scipy.spatial.transform as trf
 
-import sys 
 import os
+import sys
+
+import argparse
+
+from Environment import EnvironmentHandler
+
+import coal
+
+def o3d_to_pv(o3d_mesh):
+    # Extract vertices and faces
+    vertices = np.asarray(o3d_mesh.vertices)
+    faces = np.asarray(o3d_mesh.triangles)
+
+    # PyVista expects faces as a flat array: [3, i0, i1, i2, 3, i3, i4, i5, ...]
+    faces_flat = np.hstack([[3, *tri] for tri in faces])
+
+    print(f"Vertices shape: {vertices.shape}, Faces shape: {faces.shape}")
+    # Create PolyData
+    pv_mesh = pv.PolyData(vertices, faces_flat)
+    return pv_mesh
+
+
+def strToBool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif value.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def tmesh_to_o3d(tmesh : trimesh.Trimesh):
+    """
+    Convert a trimesh object to an open3d mesh object.
+    """
+    tmesh.export("temp_mesh.obj")
+    o3d_mesh = o3d.io.read_triangle_mesh("temp_mesh.obj")
+    os.remove("temp_mesh.obj")
+    return o3d_mesh
+
+def sample_tmmesh(tmesh : trimesh.Trimesh, number_of_points=100000):
+    """
+    Sample points from a trimesh object.
+    """
+    o3d_mesh = tmesh_to_o3d(tmesh)
+    point_cloud = o3d_mesh.sample_points_poisson_disk(number_of_points=number_of_points)
+    return point_cloud
 
 def main():
-    def create_box(center, size):
-        box = o3d.geometry.TriangleMesh.create_box(*size)
-        box.translate(np.array(center) - np.array(size) / 2)
-        box.compute_vertex_normals()
-        return box
+    parser = argparse.ArgumentParser(description="Create a 3D mesh and visualize it.")
+    parser.add_argument('--output', type=str, default='mesh.pcd', help='Output file name for the mesh')
+    parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
+    parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
+    parser.add_argument('--pcd-size', type=int, default=10000, help='Number of points to sample from the mesh for point cloud generation')
 
-    boxes = [
-        create_box(center=[-4.7, 4, 0], size=[1, 5, 5]),
-        create_box(center=[0.4, 4, 0], size=[8, 5, 5])
-    ]
+    args = parser.parse_args()
+    outputFile = args.output
 
-    combined_pcd = o3d.geometry.PointCloud()
-    for box in boxes:
-        pcd = box.sample_points_poisson_disk(number_of_points=50000)
-        combined_pcd += pcd
+    if args.glassMaze:
+        # Generate the environment mesh of the glass maze first shown in the 
+        # space cobot demo video (some changes were made to the original mesh,
+        # in order to make the first trajectory the only one that is feasible)
+        cube1 = trimesh.creation.box(extents=(1, 0.1, 5))
+        cube2 = trimesh.creation.box(extents=(1, 0.1, 5))
+        cube1.apply_translation([-0.6, 0, 0])
+        cube2.apply_translation([0.6, 0, 0])
+        
+        cube3 = trimesh.creation.box(extents=(0.1, 1, 5))
+        cube4 = trimesh.creation.box(extents=(0.1, 5, 5))
 
-    # Visualize boxes and point cloud
-    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
-    o3d.visualization.draw_geometries(boxes + [combined_pcd, axis])
+        cube3.apply_translation([1, 1.9, 0])
+        cube4.apply_translation([1, -1.5, 0])
 
-    # Save to PCD
-    o3d.io.write_point_cloud("environment.pcd", combined_pcd)
+        cube5 = trimesh.creation.box(extents=(2.5, 5, 0.1))
+        cube5.apply_translation([0, 1.1, 2.5])
+
+        cube6 = trimesh.creation.box(extents=(0.1, 5, 1))
+        cube7 = trimesh.creation.box(extents=(0.1, 5, 1))
+        cube6.apply_translation([1, 1.7, 2.7])
+        cube7.apply_translation([1, 1.7, 4.1])
+
+
+        finalMesh = cube1 + cube2 + cube3 + cube4 + cube5 + cube6 + cube7
+        pcd = sample_tmmesh(finalMesh, number_of_points=args.pcd_size)
+
+    else:
+        # Create a cube
+        cube1 = trimesh.creation.box(extents=(0.5, 10, 10))
+
+        # Create a smaller cube to subtract
+        cube2 = trimesh.creation.box(extents=(0.75, 0.6, 0.3))
+        cube2.apply_translation([0.0, 3, 3])
+
+        cube8 = trimesh.creation.box(extents=(2., 1.00, 1.00))
+        cube8.apply_translation([1.0, 3, 3])
+
+        cube9= trimesh.creation.box(extents=(2.00, 0.6, 0.3))
+        cube9.apply_translation([1.0, 3, 3])
+
+        cube8 = cube8.difference(cube9)
+
+
+        cube1 = cube1.difference(cube2)
+
+        cube3 = trimesh.creation.box(extents=(0.5, 10, 10))
+        cube3.apply_translation([-0.85, 0, 0])
+        # Perform boolean difference
+
+        cube4 = trimesh.creation.box(extents=(1.5, 10, 0.25))
+        cube4.apply_translation([-0.50, 0, 5])
+
+        cube5 = trimesh.creation.box(extents=(1.5, 9.5, 0.25))
+        cube5.apply_translation([-0.50, -0.5, 0])
+            
+
+        cube6 = trimesh.creation.box(extents=(1.5, 0.25, 10))
+        cube6.apply_translation([-0.50, 5, 0])
+
+        cube7 = trimesh.creation.box(extents=(1.5, 10, 0.25))
+        cube7.apply_translation([-0.50, 0, -5])
+
+        finalMesh = cube1 +  cube4 + cube5 + cube6 + cube7 + cube8 #+ cube3
+        pcd = sample_tmmesh(finalMesh, number_of_points=args.pcd_size)
+
+    env = EnvironmentHandler(pcd)
+    if args.visualize:
+        pv_ = pv.Plotter()
+        #pv_.add_mesh(o3d_to_pv(tmesh_to_o3d(finalMesh)), show_edges=True, color='white', line_width=0.5, point_size=5, show_scalar_bar=False)
+        pv_.add_mesh(env.voxel_mesh, show_edges=True, color='green', line_width=0.5, point_size=5, show_scalar_bar=False)
+        pv_.add_mesh(pv.PolyData(np.asarray(pcd.points)), color='blue', point_size=2, render_points_as_spheres=True)
+        pv_.add_axes()
+        pv_.show_grid()
+
+
+    if args.glassMaze:
+        _spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
+
+        spaceCobot = _spaceCobot.copy()
+        transform = np.eye(4)
+        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
+        pos = np.array([0.5, 2.0, 1.0])
+        transform[:3, :3] = rot.as_matrix()
+        transform[:3, 3] = pos
+        spaceCobot.transform(transform)
+        pv_.add_mesh(spaceCobot, color='red', show_edges=True)
+
+        spaceCobot = _spaceCobot.copy()
+        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
+        pos = np.array([0.5, 5.0, 1.0])
+        transform[:3, :3] = rot.as_matrix()
+        transform[:3, 3] = pos
+        spaceCobot.transform(transform)
+        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
+
+        spaceCobot = _spaceCobot.copy()
+        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
+        pos = np.array([0.5, 5.0, 6.0])
+        transform[:3, :3] = rot.as_matrix()
+        transform[:3, 3] = pos
+        spaceCobot.transform(transform)
+        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
+
+    else: 
+        _spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
+
+        spaceCobot = _spaceCobot.copy()
+        transform = np.eye(4)
+        rot = trf.Rotation.from_euler('xyz', [0, 75, 0], degrees=True)
+        pos = np.array([-0.375, 0.0, -3.0])
+        transform[:3, :3] = rot.as_matrix()
+        transform[:3, 3] = pos
+
+        spaceCobot.transform(transform)
+        pv_.add_mesh(spaceCobot, color='red', show_edges=True)
+
+        spaceCobot = _spaceCobot.copy()
+        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
+        pos = np.array([-0.375, 0.0, 3.0])
+        transform[:3, :3] = rot.as_matrix()
+        transform[:3, 3] = np.array([0.0, 3.0, 3.0]) 
+        spaceCobot.transform(transform)
+        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
+    
+    if args.visualize:
+        pv_.show()
+
+
 
 if __name__ == "__main__":
     main()
+    exit(0)
+
+
+
+pv_mesh = o3d_to_pv(o3d_mesh)
+
+pv_ = pv.Plotter()
+pv_.add_mesh(pv_mesh, show_edges=True, color='white', line_width=0.5, point_size=5, show_scalar_bar=False)
+
+_spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
+
+spaceCobot = _spaceCobot.copy()
+transform = np.eye(4)
+rot = trf.Rotation.from_euler('xyz', [0, 75, 0], degrees=True)
+pos = np.array([-0.375, 0.0, -3.0])
+transform[:3, :3] = rot.as_matrix()
+transform[:3, 3] = pos
+
+spaceCobot.transform(transform)
+pv_.add_mesh(spaceCobot, color='red', show_edges=True)
+
+spaceCobot = _spaceCobot.copy()
+rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
+pos = np.array([-0.375, 0.0, 3.0])
+transform[:3, :3] = rot.as_matrix()
+transform[:3, 3] = np.array([0.0, 3.0, 3.0]) 
+spaceCobot.transform(transform)
+pv_.add_mesh(spaceCobot, color='green', show_edges=True)
+
+
+pv_.show()
+
+
