@@ -1,4 +1,0 @@
-[console_scripts]
-map = MapCreation.main:main
-rrtOpt = RRT.main:main
-rrtSin = RRT.RRT:main
