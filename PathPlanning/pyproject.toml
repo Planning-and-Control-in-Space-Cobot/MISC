@@ -26,6 +26,7 @@ dependencies = [
     "black>=25.1.0",
     "coal>=3.0.1",
     "colorama>=0.4.6",
+    "numba>=0.61.2",
 ]
 
 [project.scripts]
