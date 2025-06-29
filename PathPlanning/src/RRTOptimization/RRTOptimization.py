@@ -323,7 +323,7 @@ class RRTPathOptimization:
         self.xi = self.opti.parameter(13)
         self.opti.set_value(self.xi, xi)
         self.opti.set_value(self.xf, xf)
-        #self.opti.subject_to(self.x[:, -1] == self.xf)  # Initial State
+        self.opti.subject_to(self.x[:, -1] == self.xf)  # Initial State
         self.opti.subject_to(self.x[:, 0] == self.xi)  # Final State
 
         # Dynamic constraints
@@ -335,7 +335,7 @@ class RRTPathOptimization:
             )
 
         # Obstacle avoidance constraints - First we need to get the obstacle of the initial path
-        for i in range(1, self.N - 1):
+        for i in range(1, self.N):
             # Get the decision variables for the current step
             pos = self.x[0:3, i]
             R_q = sc.Rotation.from_quat(self.x[6:10, i])
@@ -560,10 +560,13 @@ class RRTPathOptimization:
         )
 
     def visualize_trajectory(
-        self, initial_path, optimized_path, voxel_mesh, obstacles=None, steps : List[int] = [] 
+        self, initial_path, optimized_path, voxel_mesh, obstacles=None, steps : List[int] = [], objectives =[] 
     ):
         if steps == []:
             steps = range(len(initial_path))
+
+        if objectives == []:
+            objectives = range(len(initial_path))
         
         plotter = pv.Plotter()
         plotter.add_mesh(voxel_mesh, color="red", opacity=0.1)
@@ -571,9 +574,13 @@ class RRTPathOptimization:
         for i, s in enumerate(initial_path):
             if i not in steps:
                 continue
+            if i in objectives:
+                color = "orange"
+            else:
+                color = "green"
             mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
             plotter.add_mesh(
-                mesh, color="green", opacity=0.5
+                mesh, color=color, opacity=0.5
             )
 
 
@@ -582,9 +589,14 @@ class RRTPathOptimization:
         for i, s in enumerate(optimized_path):
             if i not in steps:
                 continue
+
+            if i in objectives:
+                color = "red"
+            else:
+                color = "blue"
             mesh = self.robot.getPVMesh(s.x, R.from_quat(s.q))
             plotter.add_mesh(
-                mesh, color="blue", opacity=0.5, show_edges=True
+                mesh, color=color, opacity=0.5, show_edges=True
             )
 
 
