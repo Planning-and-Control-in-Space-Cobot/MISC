@@ -6,6 +6,7 @@ import scipy.spatial.transform as trf
 
 import os
 import argparse
+import tempfile
 
 from Environment import EnvironmentHandler
 
@@ -81,12 +82,16 @@ def tmesh_to_o3d(tmesh : trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
     Returns
         o3d.geometry.TriangleMesh: The converted open3d mesh object.    
     """
-    tmesh.export("temp_mesh.obj")
-    o3d_mesh = o3d.io.read_triangle_mesh("temp_mesh.obj")
-    os.remove("temp_mesh.obj")
+
+    with tempfile.NamedTemporaryFile(suffix=".obj", delete=False) as tmp:
+        temp_path = tmp.name
+        tmesh.export(temp_path)
+    
+    o3d_mesh = o3d.io.read_triangle_mesh(temp_path)
+    os.remove(temp_path)
     return o3d_mesh
 
-def sample_tmmesh(tmesh : trimesh.Trimesh, number_of_points=100000):
+def sample_tmmesh(tmesh : trimesh.Trimesh, number_of_points=200000):
     """
     Sample points from a trimesh object.
 
@@ -106,7 +111,7 @@ def main():
     parser.add_argument('--output', type=str, default='mesh.pcd', help='Output file name for the mesh')
     parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
     parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
-    parser.add_argument('--pcd-size', type=int, default=10000, help='Number of points to sample from the mesh for point cloud generation')
+    parser.add_argument('--pcd-size', type=int, default=50000, help='Number of points to sample from the mesh for point cloud generation')
 
     args = parser.parse_args()
     outputFile = args.output
@@ -238,8 +243,8 @@ def main():
     
     if args.visualize:
         pv_.show()
-
-
+    o3d.io.write_point_cloud(outputFile, pcd)
+    print(f"Point cloud saved to {outputFile}")
 
 if __name__ == "__main__":
     main()
