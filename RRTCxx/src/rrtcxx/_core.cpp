@@ -67,6 +67,9 @@ class RRTPlanner3D {
 public:
     RRTPlanner3D(Eigen::MatrixXd vertexLocation,
                  Eigen::MatrixXi triangleIndices,
+                 Eigen::Vector3d payloadTranslation = Eigen::Vector3d::Zero(),
+                 Eigen::Vector3d payloadSize = Eigen::Vector3d::Zero(),
+                 bool usePayload = false, 
                  int numIterations = 10000,
                  double stepSize = 0.5,
                  double goalBias = 0.1,
@@ -75,6 +78,9 @@ public:
                  double minZ = -10.0, double maxZ = 10.0)
         : vertexLocation(vertexLocation),
           triangleIndices(triangleIndices),
+          payloadTranslation(payloadTranslation),
+          payloadSize(payloadSize),
+          usePayload(usePayload),
           numIterations(numIterations),
           stepSize(stepSize),
           goalBias(goalBias),
@@ -83,7 +89,16 @@ public:
           minZ(minZ), maxZ(maxZ) 
     {
         setupEnvironment();
-        createBox(0.45, 0.45, 0.12); // simple robot box
+        this->robotBox = createBox(0.45, 0.45, 0.12); // simple robot box
+        this->payloadBox = createBox(payloadSize); // payload box
+    }
+
+    std::vector<Node *> getTreeA() const {
+        return treeA;
+    }
+    
+    std::vector<Node *> getTreeB() const {
+        return treeB;
     }
 
     std::vector<State> plan(const State& start, const State& goal) {
@@ -142,6 +157,19 @@ public:
                     // Success: build path
                     std::vector<State> path = constructPath(newNodeA, newNodeB);
                     std::cerr << "Path found in " << i << " iterations." << std::endl;
+
+                    for (auto const & node : path)  {
+                        auto pos = node.position;
+                        auto quat = node.orientation;
+                        auto collision = isCollisionFree(node);
+
+                        std::cout << "Position: " << pos.transpose()
+                                    << ", Orientation: " << quat.coeffs().transpose()
+                                    << ", Collision Free: " << collision << std::endl;
+
+                    }
+
+
                     return path;
                 }
             }
@@ -151,14 +179,23 @@ public:
         }
 
         std::cerr << "Failed to find path!" << std::endl;
+        this->treeA = treeA;
+        this->treeB = treeB;
         return {};
     }
 
 private:
     std::shared_ptr<coal::BVHModel<coal::OBBRSS>> envModel;
     std::shared_ptr<coal::Box> robotBox;
+    std::shared_ptr<coal::Box> payloadBox;
     Eigen::MatrixXd vertexLocation;
     Eigen::MatrixXi triangleIndices;
+    std::vector<Node *> treeA, treeB;
+
+    bool usePayload;
+    Eigen::Vector3d payloadTranslation;
+    Eigen::Vector3d payloadSize;
+
     int numIterations;
     double stepSize, goalBias;
     double minX, maxX, minY, maxY, minZ, maxZ;
@@ -177,8 +214,12 @@ private:
         envModel->endModel();
     }
 
-    void createBox(double x, double y, double z) {
-        robotBox = std::make_shared<coal::Box>(x, y, z);
+    std::shared_ptr<coal::Box> createBox(double x, double y, double z) {
+        return std::make_shared<coal::Box>(x, y, z);
+    }
+
+    std::shared_ptr<coal::Box> createBox(const Eigen::Vector3d& size) {
+        return std::make_shared<coal::Box>(size.x(), size.y(), size.z());
     }
 
     Node* findNearest(const std::vector<Node*>& tree, const State& state) {
@@ -209,7 +250,18 @@ private:
         coal::CollisionRequest req;
         coal::CollisionResult res;
         coal::collide(robotBox.get(), T1, envModel.get(), T2, req, res);
-        return !res.isCollision();
+        
+        bool collisionFree = !res.isCollision();
+        res.clear();
+        if (usePayload) {
+            coal::Transform3s TPayload;
+            TPayload.setQuatRotation(state.orientation);
+            TPayload.setTranslation(state.position + payloadTranslation);
+            coal::collide(payloadBox.get(), TPayload, envModel.get(), T2, req, res);
+            collisionFree &= !res.isCollision();
+            res.clear();
+        }
+        return collisionFree;
     }
 
     void Distance(const State& from) {
@@ -285,8 +337,10 @@ PYBIND11_MODULE(_core, m) {
 
 
     py::class_<RRTPlanner3D>(m, "RRTPlanner3D")
-        .def(py::init<Eigen::MatrixXd, Eigen::MatrixXi, int, double, double, double, double, double, double, double, double>())
-        .def("plan", &RRTPlanner3D::plan);
+        .def(py::init<Eigen::MatrixXd, Eigen::MatrixXi, Eigen::Vector3d, Eigen::Vector3d, bool, int, double, double, double, double, double, double, double, double>())
+        .def("plan", &RRTPlanner3D::plan)
+        .def("getTreeA", &RRTPlanner3D::getTreeA)
+        .def("getTreeB", &RRTPlanner3D::getTreeB);
 
     
 
