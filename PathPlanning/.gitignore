@@ -6,3 +6,6 @@
 *.whl
 *.egg-info/
 
+*.obj
+*.pcd
+
