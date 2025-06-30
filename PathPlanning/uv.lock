@@ -450,6 +450,7 @@ dependencies = [
     { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/31/ed/144e12b6297201750eae08aa9372f2212d104269433a11b62ecab0da2446/dash-3.0.2.tar.gz", hash = "sha256:a9e08479d8dcf4f76e87794ee8d79ed4b58423be5f367f609ac8c24bda2f78b0", size = 7599031, upload-time = "2025-04-01T19:43:22.303Z" }
+
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/52/a4d1320ab57402d0cbe7e70e3bad72524bb66b86973a0330b372f3ce47b2/dash-3.0.2-py3-none-any.whl", hash = "sha256:fa5b03fe47690eb1785c71402031fd22a8ebb1f4b46d556f36e8d5b0e13a4124", size = 7945386, upload-time = "2025-04-01T19:43:14.74Z" },
 ]
@@ -725,7 +726,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/05/f9/27e94c1b3eb29e6933b6986ffc5fa1177d2cd1f0c8efc5f02c91c9ac61de/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_ppc64le.whl", hash = "sha256:151dffc4865e5fe6dafce5480fab84f950d14566c480c08a53c663a0020504b6", size = 2390661, upload-time = "2024-12-24T18:30:34.939Z" },
     { url = "https://files.pythonhosted.org/packages/d9/d4/3c9735faa36ac591a4afcc2980d2691000506050b7a7e80bcfe44048daa7/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_s390x.whl", hash = "sha256:577facaa411c10421314598b50413aa1ebcf5126f704f1e5d72d7e4e9f020d90", size = 2546710, upload-time = "2024-12-24T18:30:37.281Z" },
     { url = "https://files.pythonhosted.org/packages/4c/fa/be89a49c640930180657482a74970cdcf6f7072c8d2471e1babe17a222dc/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:be4816dc51c8a471749d664161b434912eee82f2ea66bd7628bd14583a833e85", size = 2349213, upload-time = "2024-12-24T18:30:40.019Z" },
-]
 
 [[package]]
 name = "markupsafe"
@@ -939,9 +939,7 @@ name = "nest-asyncio"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/83/f8/51569ac65d696c8ecbee95938f89d4abf00f47d58d48f6fbabfe8f0baefe/nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe", size = 7418, upload-time = "2024-01-21T14:25:19.227Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c", size = 5195, upload-time = "2024-01-21T14:25:17.223Z" },
-]
+wheels = []
 
 [[package]]
 name = "numpy"
