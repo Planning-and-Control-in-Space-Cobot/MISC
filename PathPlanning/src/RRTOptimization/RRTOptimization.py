@@ -148,14 +148,14 @@ class RRTPathOptimization:
             print("Inf values in initial path")
             return False
 
-        for path in initialPath:
-            if not np.allclose(np.linalg.norm(path[6:10]), 1, atol = 1e-1): 
-                print(f"Invalid Quaternion in initial path {path} {np.linalg.norm(path[6:10])}")
-                return False
-            if np.any(path < minStateValues - 1e-2) or np.any(path > maxStateValues + 1e-2):
-                print(f"Invalid state in initial path {path}, out of bounds")
-                print(f"Min state values: {minStateValues}, Max state values: {maxStateValues}")
-                return False
+        #for path in initialPath:
+        #    if not np.allclose(np.linalg.norm(path[6:10]), 1, atol = 1e-1): 
+        #        print(f"Invalid Quaternion in initial path {path} {np.linalg.norm(path[6:10])}")
+        #        return False
+        #    if np.any(path < minStateValues - 1e-2) or np.any(path > maxStateValues + 1e-2):
+        #        print(f"Invalid state in initial path {path}, out of bounds")
+        #        print(f"Min state values: {minStateValues}, Max state values: {maxStateValues}")
+        #        return False
         
         ## Check initial actuation
         if initialActuation.shape[0] != 6:
@@ -346,16 +346,14 @@ class RRTPathOptimization:
             for obstacle in _obstacles:
                 # half plane constraints:
                 for v in self.robot.getVertices():
-                    # How to know if the signal for the half plane is positive or negative?
-                    #print(f"v : {R_q.as_matrix() @ v + pos} normal {obstacle.normal.reshape((1, 3))} closestPoint {obstacle.closestPointObstacle.reshape((3, 1))} safetyMargin {obstacle.safetyMargin}")
                     self.opti.subject_to(
                         obstacle.normal.reshape((1, 3))
                         @ (R_q.as_matrix() @ v + pos)
-                        > obstacle.normal.reshape((1, 3)) @ obstacle.closestPointObstacle.reshape((3, 1)) + obstacle.safetyMargin
+                        > obstacle.normal.reshape((1, 3)) @ obstacle.closestPointObstacle.reshape((3, 1))# + obstacle.safetyMargin
                     )
 
             self.opti.subject_to(
-                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < maxDistance**2
+                ca.sumsqr(self.x[0:3, i] - initial_path[i].x) < 2*maxDistance**2
             )
 
         # State and actuation constraints
@@ -376,20 +374,20 @@ class RRTPathOptimization:
         for i in range(self.N):
             self.cost += self.u[:, i].T @ 0.1 @ self.u[:, i]
 
-        for i in range(1, self.N - 1):
-            self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
-                self.x[0:3, i] - self.xf[0:3]
-            )
+        #for i in range(1, self.N - 1):
+        #    self.cost += (self.x[0:3, i] - self.xf[0:3]).T @ (
+        #        self.x[0:3, i] - self.xf[0:3]
+        #    )
 
         self.opti.minimize(self.cost)
 
         self.opti.solver(
             "ipopt",
             {
-                "print_time": False
+                #"print_time": False
             },
             {
-                "print_level": 0,
+                #"print_level": 0,
                 "max_iter": 100,
                 "warm_start_init_point": "yes",  # Use initial guess
                 "linear_solver": "ma97",
@@ -397,6 +395,7 @@ class RRTPathOptimization:
                 "hessian_approximation": "limited-memory",
             },
         )
+
 
         #self.opti.solver(
         #   "sqpmethod",
