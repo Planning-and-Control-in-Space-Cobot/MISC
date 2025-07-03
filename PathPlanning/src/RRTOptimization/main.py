@@ -41,47 +41,212 @@ def createPyBox(axis):
     )
     return box
 
-def drawEnvironmentAndNormals(environment, obstacles, robot, path):
-    pv_ = pv.Plotter()
-    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+def drawCollisions(environment, path, pPath, collisionObstacles, pObstacles, robot):
 
-    for obs in obstacles:
-        pos = obs.closestPointObstacle
-        normal = obs.normal
-        pv_.add_arrows(pos, normal, mag=0.3, color="orange")
-    
-    for p in path:
-        x = p.x
-        q = p.q
-        R = trf.Rotation.from_quat(q)
-        robot_mesh = robot.getPVMesh(x, R)
-        if robot_mesh is not None:
-            pv_.add_mesh(robot_mesh, color="blue", opacity=0.4)
-    
-    pv_.show()
+
+    for c in collisionObstacles:
+        pv_ = pv.Plotter()
+        pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+        i = c.iteration
+
+        plane = pv.Plane(
+            center=c.closestPointObstacle,
+            direction=c.normal
+        )
+        arrow = pv.Arrow(
+            start=c.closestPointObstacle,
+            direction=c.normal,
+            scale=.1,
+            tip_length=.2,
+        )
+
+        pv_.add_mesh(
+            plane,
+            color="green",
+            show_edges=True,
+            line_width=1.0,
+        )
+        pv_.add_mesh(
+            arrow,
+            color="green",
+            show_edges=True,
+            line_width=1.0,
+        )
+        
+        p =  path[i]
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(p.x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="blue",
+            show_edges=True,
+            opacity=0.5,
+        )
+
+        pp = pPath[i]
+        R = trf.Rotation.from_quat(pp.q)
+        robotMesh = robot.getPVMesh(pp.x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="green",
+            show_edges=True,
+            opacity=0.5,
+        )
+
+        pObs = [pObs for pObs in pObstacles if pObs.iteration == i]
+        
+        for po in pObs:
+            for v in robot.getVertices():
+                print(f"Vertex {v} : "
+                f"{po.normal @ (trf.Rotation.from_quat(p.q).apply(v) + p.x)} :"
+                f"{po.normal @ po.closestPointObstacle + po.safetyMargin} : "
+                f"{(po.normal @ (trf.Rotation.from_quat(p.q).apply(v) + p.x)) - (po.normal @ po.closestPointObstacle + po.safetyMargin)}")
+            print("\n")
+
+            plane = pv.Plane(
+                center=po.closestPointObstacle,
+                direction=po.normal
+                
+            )
+            arrow = pv.Arrow(
+                start=po.closestPointObstacle,
+                direction=po.normal,
+                scale=0.1,
+                tip_length=0.2,
+            )
+            pv_.add_mesh(
+                plane,
+                color="orange",
+                show_edges=True,
+                line_width=1.0,
+            )
+
+            pv_.add_mesh(
+                arrow,
+                color="orange",
+                show_edges=True,
+                line_width=1.0,
+            )
+        pv_.add_axes()
+        pv_.show_grid()
+        pv_.show()
+
+def drawOptimizationProblem(environment, obstacles, robot, path, fullProblem=False):
+    """Draws the optimization problem inputs
+
+    Draws the environment, the robot in each pose and the obstacles detected for 
+    each pose in the path. Has the possibility to draw the full optimization
+    problem or each step in the path and their constraints
+    """
+    if fullProblem:
+        pv_ = pv.Plotter90
+        pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+        pv_.add_axes()
+        pv_.show_grid()
+
+        for p in enumerate(path):
+            x = p.x
+            R = trf.Rotation.from_quat(p.q)
+            robotMesh = robot.getPVMesh(x, R)
+            pv_.add_mesh(
+                robotMesh,
+                color="blue",
+                show_edges=True,
+                opacity=0.5,
+            )
+        
+        for o in obstacles:
+            plane = pv.Plane(
+                center=o.closestPointObstacle,
+                direction=o.normal
+            )
+            arrow = pv.Arrow(
+                start=o.closestPointObstacle,
+                direction=o.normal,
+                scale=0.1,
+                tip_length=0.2,
+            )
+            pv_.add_mesh(
+                plane,
+                color="red",
+                show_edges=True,
+                line_width=1.0,
+            )
+
+            pv_.add_mesh(
+                arrow,
+                color="red",
+                show_edges=True,
+                line_width=1.0,
+            )
+
+        pv_.show()
+
+    else:
+        for i, p in enumerate(path):
+
+            pv_ = pv.Plotter()
+            pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+            pv_.add_axes()
+            pv_.show_grid()
+
+            x = p.x
+            R = trf.Rotation.from_quat(p.q)
+            robotMesh = robot.getPVMesh(x, R)
+            pv_.add_mesh(
+                robotMesh,
+                color="blue",
+                show_edges=True,
+                opacity=0.5,
+            )
+            _obstacles = [o for o in obstacles if o.iteration == i]
+            print(
+                f"Drawing step {i} of the optimization problem "
+                f"with pose {p.x} and orientation {p.q}"
+                f" with {len(_obstacles)} obstacles detected."
+            )
+            for o in _obstacles:
+                plane = pv.Plane(
+                    center=o.closestPointObstacle,
+                    direction=o.normal
+                )
+                arrow = pv.Arrow(
+                    start=o.closestPointObstacle,
+                    direction=o.normal,
+                    scale=0.1,
+                    tip_length=0.2,
+                )
+                pv_.add_mesh(
+                    plane,
+                    color="red",
+                    show_edges=True,
+                    line_width=1.0,
+                )
+
+                pv_.add_mesh(
+                    arrow,
+                    color="red",
+                    show_edges=True,
+                    line_width=1.0,
+                )
+
+                arrow = pv.Arrow(
+                    start=o.closestPointRobot,
+                    direction=-o.normal,
+                    scale=0.1,
+                    tip_length=0.2,
+                )
+                pv_.add_mesh(
+                    arrow,
+                    color="blue",
+                    show_edges=True,
+                    line_width=1.0,
+                )
+            pv_.show()
+
+
     return
 
-def drawEnvironmentAndObstacles(environment, obstacles):
-    """Draws the environment and the obstacles in a PyVista plotter.
-
-    Parameters:
-        environment (EnvironmentHandler): The environment handler containing the voxel mesh.
-        obstacles (list[Obstacle]): List of obstacles to be visualized.
-
-    Returns:
-        pv.Plotter: The PyVista plotter with the environment and obstacles.
-    """
-    pv_ = pv.Plotter()
-    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
-
-    for obs in obstacles:
-        pos = obs.closestPointObstacle
-        normal = obs.normal
-        pv_.add_arrows(pos, normal, mag=0.3, color="orange")
-    pv_.show()
-
-    return pv_
-            
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -164,25 +329,22 @@ def main():
         J,
         A,
         m,
-        environment.buildBox(),
-        pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06)),
     )
 
     # min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
     stateLowerBound = np.hstack([
-        np.array([1.5, 1, 0]),  # x, y, z
+        np.array([0.0, 3.0, 0.0]),  # x, y, z
         minV,
         np.array([-1, -1, -1, -1]), 
         minW,
     ])
 
     stateUpperBound = np.hstack([
-        np.array([4.0, 6, 10]),  # x, y, z
+        np.array([3.0, 6.0, 7.0]),  # x, y, z
         maxV,
         np.array([1, 1, 1, 1]),
         maxW,
     ])
-
 
     # stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
     # stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
@@ -192,7 +354,6 @@ def main():
     rrtOpt = RRTPathOptimization(
         stateLowerBound, stateUpperBound, environment, robot
     )
-
 
     optimizationPath = initialPath.copy()
     xi = np.zeros(13)
@@ -218,12 +379,23 @@ def main():
         []
     )
 
+    print(f"Number of obstacles detected: {len(obstacles)}")
+    print(f"Number of max distances: {len(maxDistances)}")
+
+    #drawOptimizationProblem(
+    #    environment, 
+    #    obstacles, 
+    #    robot, 
+    #    optimizationPath,
+    #    fullProblem=False
+    #)
+
     numSuccessfulOptimizationsRequired = 10
     optimizationHorizon = 10
     lookAhead = 10
     windowStart = 0
     prevU = np.zeros((6, optimizationHorizon + lookAhead))
-
+    """
     while len(optimizedPaths) < len(initialPath):
         numSuccessfulOptimizations =  0
         firstRun = True
@@ -326,18 +498,11 @@ def main():
                 )
                 pv_.show()
                 print(Fore.RED + "Collision detected, trying again..." + Style.RESET_ALL)
+                """
                 #drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
-                    
 
-            
-
-
-
-
-
-
-
-    for i in range(20):
+    prev_u = np.zeros((6, len(initialPath)))             
+    for i in range(50):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
 
         startTime = time.time()
@@ -351,13 +516,6 @@ def main():
         _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
         print(f"Time taken for optimization: {optimizationTime:.2f} seconds")
 
-        #if np.abs(_dt - dt) < 0.05:
-        #    rrtOpt.convexOptimization(
-        #        optimizationPath, obstacles, maxDistances, prev_u, dt, xi, xf
-        #    )
-
-
-
         # Evaluate the trajectory to ensure it is valid
         obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
             environment, 
@@ -367,18 +525,29 @@ def main():
             maxDistances    
         )
 
+        if obstacles is None:
+            break
+
+        optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
         if not anyCollision:
-            pv_ = rrtOpt.visualize_trajectory(
-                optimizationPath, _optimizationPath, environment.voxel_mesh, None, []
-            )
-            pv_.show()
+#            pv_ = rrtOpt.visualize_trajectory(
+#                optimizationPath, _optimizationPath, environment.voxel_mesh, None, []
+#            )
+#            pv_.show()
             optimizationPath = _optimizationPath
             prev_u = _prev_u
             dt = _dt
-            optimizedPaths.append((_optimizationPath, _prev_u, _dt, cost))
 
         else:
-            drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
+            pass
+            #drawCollisions(
+            #    environment, 
+            #    _optimizationPath, 
+            #    optimizationPath, 
+            #    collisionObstacles, 
+            #    obstacles, 
+            #    robot
+            #)
 
             
     pv_ = rrtOpt.visualize_trajectory(

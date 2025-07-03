@@ -11,7 +11,7 @@ import pyvista as pv
 import scipy.spatial.transform as trf
 from abc import abstractmethod
 
-from typing import TypeVar, List
+from typing import TypeVar, List, Optional, Tuple 
 
 _T = TypeVar("_T", bound="Model")
 from typing_extensions import override
@@ -69,6 +69,139 @@ class Model:
         raise NotImplementedError("This method should be implemented in the subclass")
 
 
+class face():
+    """ Class to represent a single face of the robot.
+
+    To more accurately represent the robot, and be able to get the obstacles 
+    closer to the robot in all scenarios, we will represent the square robot as 
+    a collection of 6 faces, each face, will then be 1 rectangular face 
+    (only for distance checking, not for collision checking). This will allow
+    more flexibility. 
+    
+    Observation, since fcl / coal only support 3D shapes, we will represent the
+    face as a thin rectangular prism, allowing us to compare it to a normal face
+    """
+    def __init__(self : _T, 
+                 normal : np.ndarray,
+                 sideLength : np.ndarray,
+                 centerOffset : np.ndarray
+                 ):
+        """Constructor for the face class
+        Parameters
+            normal (np.ndarray): normal vector of the face
+            sideLenght (np.ndarray): side lenght of the face, should be a 3D 
+                vector, with one of the dimensions being 0, since this is a 
+                face and not a volume.
+            centerOffset (np.ndarray): offse of the center of the face from the 
+                center of the robot
+
+        Returns:
+            None
+        """
+        if np.shape(normal) != (3,) or np.shape(sideLength) != (3,):
+            raise ValueError(
+                "normal must be a 3D vector and sideLength must be a 3D vector"
+            )
+
+        if np.count_nonzero(sideLength) != 2:
+            raise ValueError(
+                "sideLength must be a 3D vector with two non-zero elements," \
+                " since this is a face and not a volume"
+            )
+
+        self.normal = normal
+        self.sideLength = sideLength
+        self.sideLength[np.where(self.sideLength == 0)] = 1e-3  # Avoid division by zero    
+        self.centerOffset = centerOffset
+
+        self.faceObj = coal.Box(sideLength)
+
+    def getFCLObject(self : _T) -> coal.CollisionGeometry:
+        """Function to get the fcl object of the face, this will be used to compute the collision constraints in the optimization problem
+
+        Returns:
+            coal.CollisionGeometry: fcl object of the face
+        """
+        return self.faceObj 
+
+    def getClosestObstacle(self : _T,
+                            environment : EnvironmentHandler,
+                            pos : np.ndarray, 
+                            R : trf.Rotation,
+                            iter : int) -> Optional[Obstacle]:
+        """Function to get the closest obstacle to the face in the environment
+        Parameters
+            environment (EnvironmentHandler): Environment handler object that contains the environment information
+            pos (np.ndarray): position of the face in the environment, this is the translation from
+                the center of the face to the closest point in the face
+            R (trf.Rotation): quaternion of the face in the environment, this is the
+                rotation from the center of the face to the closest point in the face
+            iter (int): iteration of the path that the obstacle return should be considered
+        Returns:
+            Optional[Obstacle]: Obstacle object representing the closest obstacle to the face in the environment,
+                or None if the obstacle closest to this face is not alligned with the face normal, since this means this normal is not facing any relecant obstacle
+                """
+        if not isinstance(environment, EnvironmentHandler):
+            raise TypeError("Environment must be an instance of EnvironmentHandler")
+
+        minDistance, pt1, pt2, normal = environment.distance(
+            self.faceObj, pos + R.apply(self.centerOffset), R
+        )
+
+        # Strange BUG in coal, distance return Nan for all values of normal
+        normal = (pt1 - pt2) / np.linalg.norm(pt1 - pt2)
+        if np.dot(normal, R.apply(self.normal)) > -0.2:
+            # If the normal of the face is not facing the obstacle, we ignore it
+            return None
+        print(
+            f"iter {iter} Face normal: {R.apply(self.normal)}, Obstacle normal: {normal}, dot: {np.dot(normal, R.apply(self.normal))} = center offset {self.centerOffset}"
+        )
+
+        """
+        pv_ = pv.Plotter()
+        pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+
+        square = pv.Box(bounds=(
+            -self.sideLength[0] / 2, self.sideLength[0] / 2,
+            -self.sideLength[1] / 2, self.sideLength[1] / 2,
+            -self.sideLength[2] / 2, self.sideLength[2] / 2
+        ))
+
+        transform = np.eye(4)
+        transform[:3, :3] = R.as_matrix()
+        transform[:3, 3] = pos + self.centerOffset
+        square.transform(transform)
+
+        pv_.add_mesh(square, color="red", opacity=0.5)
+
+        pt1Mesh = pv.Sphere(radius=0.01, center=pt1)
+        pt2Mesh = pv.Sphere(radius=0.01, center=pt2)
+        pv_.add_mesh(pt1Mesh, color="blue", opacity=0.5)
+        pv_.add_mesh(pt2Mesh, color="green", opacity=0.5)
+
+        plane = pv.Plane(
+            center=pos + self.centerOffset,
+            direction=self.normal,
+            i_size=self.sideLength[0],
+            j_size=self.sideLength[1],
+        )
+
+        arrow   = pv.Arrow( 
+            start=pt2, 
+            direction=normal, 
+            scale=0.1, 
+            tip_length=0.1
+        )
+
+        pv_.add_mesh(plane, color="orange", opacity=0.5)
+        pv_.add_mesh(arrow, color="purple", opacity=0.5)
+
+
+        pv_.show()"""
+
+        return Obstacle(pt2, normal, minDistance, iter, pt1)
+
+
 class Robot(Model):
     """This class derives from the Model class and will represent the Space Cobot Robot in the optimization process.
 
@@ -84,8 +217,9 @@ class Robot(Model):
         J: np.ndarray,
         A: np.ndarray,
         m: float,
-        fcl_obj: coal.CollisionGeometry,
-        mesh: tm.Trimesh,
+        x : float = 0.45,
+        y : float = 0.45,
+        z : float = 0.12
     ):
         """Robot class to represent the robot in the optimization problem
 
@@ -94,7 +228,7 @@ class Robot(Model):
             A (np.ndarray): actuation matrix of the robot
             m (float): mass of the robot
             fcl_obj (fcl.CollisionGeometry) : collision geometry of the robot, this might be used to compute the collision constraints of the robot.
-            mesh (tm.Trimesh): mesh
+            mesh (pv.PolyData): mesh
 
         Returns:
             None
@@ -107,8 +241,100 @@ class Robot(Model):
         self.J = J
         self.A = A
         self.m = m
-        self.fcl_obj = fcl_obj
-        self.mesh = mesh
+
+        self.fcl_obj = coal.Box(np.array([x, y, z]))
+        self.mesh = pv.Box(bounds=(-x/2, x/2, -y/2, y/2, -z/2, z/2))
+
+        self.x = x
+        self.y = y
+        self.z = z
+        self.faces = self._createFaces()
+
+        #self.drawRobotAndFaces()
+
+    def _createFaces(self : _T) -> List[face]:
+        """
+        Create the 6 face objects for a cuboid robot centered at the origin.
+
+        Returns:
+            List[face]: list containing 6 face objects (top, bottom, front, back, left, right)
+        """
+        half_l = self.x / 2
+        half_w = self.y / 2
+        half_h = self.z / 2
+
+        length = self.x
+        width = self.y
+        height = self.z
+
+        return [
+            # Top face (+Z)
+            face(
+                normal=np.array([0, 0, 1]),
+                sideLength=np.array([length, width, 0]),
+                centerOffset=np.array([0, 0, half_h]),
+            ),
+            # Bottom face (-Z)
+            face(
+                normal=np.array([0, 0, -1]),
+                sideLength=np.array([length, width, 0]),
+                centerOffset=np.array([0, 0, -half_h]),
+            ),
+            # Front face (+Y)
+            face(
+                normal=np.array([0, 1, 0]),
+                sideLength=np.array([length, 0, height]),
+                centerOffset=np.array([0, half_w, 0]),
+            ),
+            # Back face (-Y)
+            face(
+                normal=np.array([0, -1, 0]),
+                sideLength=np.array([length, 0, height]),
+                centerOffset=np.array([0, -half_w, 0]),
+            ),
+            # Right face (+X)
+            face(
+                normal=np.array([1, 0, 0]),
+                sideLength=np.array([0, width, height]),
+                centerOffset=np.array([half_l, 0, 0]),
+            ),
+            # Left face (-X)
+            face(
+                normal=np.array([-1, 0, 0]),
+                sideLength=np.array([0, width, height]),
+                centerOffset=np.array([-half_l, 0, 0]),
+            ),
+        ]
+
+    def getObstaclesSingle(
+            self: _T,
+            environment: EnvironmentHandler,
+            cPos : np.ndarray,
+            cR : trf.Rotation,
+    ) -> List[Obstacle]:
+        if not isinstance(environment, EnvironmentHandler):
+            raise TypeError("Environment must be an instance of EnvironmentHandler")
+
+        obstacles = []
+        for v in self.getVertices():
+            point = environment.buildSinglePoint()
+            minDistance, pt1, pt2, _ = environment.distance(
+                point, cR.as_matrix() @ v + cPos, cR
+            )
+            obstacles.append(
+                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, -1, pt1)
+            )
+
+        filteredObstacles = []
+        for obs in obstacles:
+            newObstacle = True
+            for fobs in filteredObstacles:
+                if np.allclose(obs.normal, fobs.normal, 1e-1):
+                    newObstacle = False
+            if newObstacle:
+                filteredObstacles.append(obs)
+                
+        return filteredObstacles
 
     def getObstacles(
         self,
@@ -117,7 +343,7 @@ class Robot(Model):
         previousPath,
         previousObstacles, 
         prevMaxDistances
-    ) -> List[Obstacle]:
+    ) -> Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
         """Function to compute the collision planes of the robot with the environment
 
         Parameters
@@ -128,70 +354,87 @@ class Robot(Model):
             count (int): number of points to sample on the surface of the robot mesh, default is 100
 
         Returns:
-            List[Obstacle]: list of Obstacle objects representing the collision planes of the robot with the environment
+            Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
+                - List of obstacles detected in the environment, if a collision was detected in the current path, it is the previous obstacles and the collisions planes
+                - Maximum distance of the closest obstacles detected in the environment by each face 
+                - Boolean indicating if any collision was detected
+                - List of the collision planes if any exist
 
         """
-        if not isinstance(environment, EnvironmentHandler):
-            raise TypeError("Environment must be an instance of EnvironmentHandler")
-        Obstacles = []
-        maxDistances = []
-
-        anyCollision = False    
+        anyCollision = False
+        obstacles, maxDistance = [], []
         for i, p in enumerate(path):
-            pos = p.x
-            R = trf.Rotation.from_quat(p.q)
-            collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
+            collision, _, _, _, _ = environment.collide(
+                self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
+            )
 
             if collision:
                 anyCollision = True
                 break
-            obstacles = []
-            maxDistance = -np.inf
-            for v in self.getVertices():
-                point = environment.buildSinglePoint()
-                minDistance, pt1, pt2, _ = environment.distance(point, R.as_matrix() @ v + pos, R)
-                obstacles.append(
-                    Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, i)
-                )
-                maxDistance = max(maxDistance, minDistance)
+            
+            _minDistance = []
+            _obstacles = []
+            for f in self.faces:
+                obs = f.getClosestObstacle(environment, p.x, trf.Rotation.from_quat(p.q), i)
+                if obs is not None:
+                    _minDistance.append(obs.minDistance)
+                    newObstacle = True
+                    for _obs in _obstacles:
+                        if np.allclose(_obs.normal, obs.normal, 1e-1):
+                            newObstacle = False 
+                    if newObstacle:
+                        _obstacles.append(obs)
+                        obstacles.append(obs)
+            if _minDistance == []:
+                return None, None, None, None
+            
+            maxDistance.append(max(_minDistance))
 
-            filteredObstacles = []
-            for obs in obstacles: 
-                newObstacle = True
-                for fobs in filteredObstacles:
-                    if np.allclose(obs.normal, fobs.normal, 1e-1):
-                        newObstacle = False
-                if newObstacle:
-                    filteredObstacles.append(obs)
-            Obstacles.extend(filteredObstacles)
-            maxDistances.append(maxDistance)
-        
+        collisionObstacles = []
         if anyCollision:
-            print("Collision detected in the path, computing collision planes")
-            collisionObstacles = []
             for i, p in enumerate(path):
-                pos = p.x
-                R = trf.Rotation.from_quat(p.q)
-                collision, depth, nearestPointRobot, nearestPointObstacle, normal = environment.collide(self.fcl_obj, pos, R)
+                collision, depth, pt1, pt2, normal = environment.collide(
+                    self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
+                )
+
                 if collision:
-                    t = trf.Rotation.from_quat(p.q).as_matrix().T @ (nearestPointRobot - pos)
-
-                    point = environment.buildSinglePoint()
-                    prevPath = previousPath[i]
-                    prevP = prevPath.x
-
-                    minDistance, pt1, pt2, _ = environment.distance(
-                        point, prevP + trf.Rotation.from_quat(prevPath.q).as_matrix().T @ t
-                    )
-
-                    normal = (pt1 - nearestPointObstacle) / np.linalg.norm(pt1 - nearestPointObstacle)
-                    previousObstacles.append(Obstacle(nearestPointObstacle, normal, minDistance, i))
                     collisionObstacles.append(
-                        Obstacle(nearestPointObstacle, normal, minDistance, i)
-                    )
-            return previousObstacles, prevMaxDistances, True, collisionObstacles
-        
-        return Obstacles, maxDistances, False, []
+                        Obstacle(pt2, -normal, depth, i, pt1)
+                ) 
+            previousObstacles.extend(collisionObstacles)
+            return previousObstacles, prevMaxDistances, anyCollision,  collisionObstacles
+        return obstacles, maxDistance, anyCollision, collisionObstacles
+
+    def drawRobotAndFaces(self : _T):
+        """Function to draw the robot and its faces in a pyvista plotter, this is used for debugging purposes"""
+        pv_ = pv.Plotter()
+        pv_.add_mesh(self.mesh, color="blue", opacity=0.5)
+
+        for f in self.faces:
+            square = pv.Box(
+                bounds=(
+                    -f.sideLength[0] / 2, f.sideLength[0] /
+                    2,
+                    -f.sideLength[1] / 2, f.sideLength[1] /
+                    2,
+                    -f.sideLength[2] / 2, f.sideLength[2] /
+                    2,
+                )
+            )
+            transform = np.eye(4)
+            transform[:3, 3] = f.centerOffset
+            square.transform(transform)
+
+            arrow = pv.Arrow(
+                start=f.centerOffset,
+                direction=f.normal,
+                scale=0.1,
+                tip_length=0.1
+            )
+            pv_.add_mesh(arrow, color="purple", opacity=0.5)
+            pv_.add_mesh(square, color="red", opacity=0.5)
+
+        pv_.show()
 
     @override
     def getPVMesh(self):

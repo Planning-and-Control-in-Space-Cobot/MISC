@@ -8,7 +8,8 @@ class Obstacle:
         normal : np.ndarray, 
         distance : float,
         iteration : int,
-        safetyMargin : float = 0.1):
+        closestPointRobot : np.ndarray ,
+        safetyMargin : float = 0.01):
         '''
             This class represents an obstacle in the optimization problem
 
@@ -25,6 +26,7 @@ class Obstacle:
         self.minDistance = distance
         self.iteration = iteration
         self.safetyMargin = safetyMargin
+        self.closestPointRobot = closestPointRobot
     
     def generateSquare(self):
         """
