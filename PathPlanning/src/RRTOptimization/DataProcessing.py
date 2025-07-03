@@ -23,6 +23,7 @@ def main():
     # Load the optimization data from a pickle file
     with open(os.path.join(scriptDir, "optimizedPath.pkl"), "rb") as f:
         data = pickle.load(f)
+        data = data[1:]
 
     print("Data loaded successfully.")
 
