@@ -1,68 +1,65 @@
-import trimesh
-import open3d as o3d
-import pyvista as pv
-import numpy as np
-import scipy.spatial.transform as trf
+"""This script created a 3D point cloud mesh from a custom defined 3D object.
 
+This mesh is also semgmented into multiple planes using RANSAC and visualized 
+using both matplotlib and PyVista. The 3D point cloud is then saved to be used 
+as the environment in a custom path planning with collision avoidance algorithm.
+"""
 import os
 import argparse
 import tempfile
+import time
+from typing import List, Tuple
+
+import numpy as np
+import trimesh
+import open3d as o3d
+import pyvista as pv
+import matplotlib.pyplot as plt
 
 from Environment import EnvironmentHandler
 
+def o3d_to_pv(o3d_mesh: o3d.geometry.TriangleMesh) -> pv.PolyData:
+    """Convert and open3d TriangleMesh to a PyVista PolyData object.
 
-def o3d_to_pv(o3d_mesh : o3d.geometry.TriangleMesh) -> pv.PolyData:
-    """ Convert and open3d mesh into a pyvista mesh.
+    In order to be able to show an open3d Triangle Mesh into a pyvista plot, we 
+    need to convert it into a triangle mesh that is compatible with PyVista.
 
-    Converts an open3d triangular mesh, into a mesh that can be used inside
-    a pyvista plot.
-
-
-    Parameters
-       o3d_mesh (o3d.geometry.TriangleMesh): The open3d mesh to convert.
-       
-    Returns
-       pv.PolyData: The converted mesh in pyvista format.
-
-    Raises
-         TypeError: If the input is not an open3d.geometry.TriangleMesh object.
-         ValueError: If the input mesh does not have triangles.
-    """
-    if not type(o3d_mesh) is o3d.geometry.TriangleMesh:
-        raise TypeError("Input must be an open3d.geometry.TriangleMesh object")
+    Args:
+        o3d_mesh (o3d.geometry.TriangleMesh): The open3d Triangle
+            Mesh object to convert.
     
+    Returns:
+        pv.PolyData: The converted PyVista PolyData object.
+
+    Raises:
+        TypeError: If the input is not an open3d.geometry.TriangleMesh object.
+        ValueError: If the input mesh does not have triangles.
+    """
+    if not isinstance(o3d_mesh, o3d.geometry.TriangleMesh):
+        raise TypeError("Input must be an open3d.geometry.TriangleMesh object")
     if not o3d_mesh.has_triangles():
         raise ValueError("Input mesh must have triangles")
-    
-    # Extract vertices and faces
+
     vertices = np.asarray(o3d_mesh.vertices)
     faces = np.asarray(o3d_mesh.triangles)
-
-    # PyVista expects faces as a flat array: [3, i0, i1, i2, 3, i3, i4, i5, ...]
     faces_flat = np.hstack([[3, *tri] for tri in faces])
+    return pv.PolyData(vertices, faces_flat)
 
-    print(f"Vertices shape: {vertices.shape}, Faces shape: {faces.shape}")
-    # Create PolyData
-    pv_mesh = pv.PolyData(vertices, faces_flat)
-    return pv_mesh
+def strToBool(value: str) -> bool:
+    """Convert a string representation of truth to a boolean value.
 
+    This function is used to parse command line arguments that expect a boolean
+    value. It accepts various string representations of truth and falsehood.
 
-def strToBool(value : str) -> bool:
-    """Convert a string to a boolean value.
+    Args:
+        value (str): The string value to convert to boolean.
 
-    This function converts a string representation of a boolean value
-    to an actual boolean. It accepts various common representations
-    such as 'yes', 'no', 'true', 'false', 't', 'f', 'y', 'n', '1', and '0'.
-
-    Parameters
-        value (str): The string to convert to a boolean.
-    
     Returns:
         bool: The converted boolean value.
 
     Raises:
-        argparse.ArgumentTypeError: If the string does not represent a valid 
-        boolean value.
+        argparse.ArgumentTypeError: If the string value is not a valid boolean
+            representation.
     """
     if isinstance(value, bool):
         return value
@@ -73,178 +70,270 @@ def strToBool(value : str) -> bool:
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def tmesh_to_o3d(tmesh : trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
-    """ Convert a trimesh object to an open3d mesh object.
+def tmesh_to_o3d(tmesh: trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
+    """Convert a trimesh Trimesh object to an open3d TriangleMesh object.
 
-    Parameters
-        tmesh (trimesh.Trimesh): The trimesh object to convert.
-            
-    Returns
-        o3d.geometry.TriangleMesh: The converted open3d mesh object.    
+    The easier way to convert between these two libraries is to export the 
+    mesh into a temporary file that both libraries can read and write, so beware
+    a temporary file will be created and deleted in the process.
+
+    Args:
+        tmesh (trimesh.Trimesh): The trimesh Trimesh object to
+            convert.
+    
+    Returns:
+        o3d.geometry.TriangleMesh: The converted open3d TriangleMesh object.
     """
-
     with tempfile.NamedTemporaryFile(suffix=".obj", delete=False) as tmp:
         temp_path = tmp.name
         tmesh.export(temp_path)
-    
     o3d_mesh = o3d.io.read_triangle_mesh(temp_path)
     os.remove(temp_path)
     return o3d_mesh
 
-def sample_tmmesh(tmesh : trimesh.Trimesh, number_of_points=200000):
-    """
-    Sample points from a trimesh object.
+def sample_tmesh(
+        tmesh: trimesh.Trimesh,
+        number_of_points=200000) -> o3d.geometry.PointCloud:
+    """Samples multiple point from the surface of a trimesh object.
+    
+    This function create an example point cloud with a specified number of 
+    point that will then be saved as a point cloud file. It receives a trimesh
+    object, converts it to an open3d TriangleMesh object and them takes x number
+    of samples from the surface of the mesh using Poisson disk sampling.
 
-    Parameters
-        tmesh (trimesh.Trimesh): The trimesh object to sample points from.
+    Args:
+        tmesh (trimesh.Trimesh): The trimesh object to sample.
         number_of_points (int): The number of points to sample from the mesh.
-        
+    
     Returns:
-        o3d.geometry.PointCloud: A point cloud containing the sampled points.    
+        o3d.geometry.PointCloud: The sampled point cloud as an open3d PointCloud
+        object.
     """
     o3d_mesh = tmesh_to_o3d(tmesh)
-    point_cloud = o3d_mesh.sample_points_poisson_disk(number_of_points=number_of_points)
-    return point_cloud
+    return o3d_mesh.sample_points_poisson_disk(
+        number_of_points=number_of_points
+    )
+
+def auto_segment_planes(
+    pcd,
+        distance_threshold=0.01,
+        min_inliers=100,
+        max_iterations=100
+    ) -> Tuple[
+        List[o3d.geometry.PointCloud],
+        List[List[float]],
+        o3d.geometry.PointCloud
+    ]:
+    """Automatically segments planes from a point cloud using RANSAC.
+
+    This function uses the RANSAC algorithm to segment multiple planes from a
+    point cloud. It iteratively finds planes until the number of inliers is less
+    than the specified minimum or the maximum number of iterations is reached.
+
+    Args:
+        pcd (o3d.geometry.PointCloud): The input point cloud to segment.
+        distance_threshold (float): The maximum distance from a point to the 
+            plane to be considered an inlier.
+        min_inliers (int): The minimum number of inliers required to consider a
+            plane valid.
+        max_iterations (int): The maximum number of iterations to run the RANSAC
+            algorithm.
+
+    Returns:
+        tuple: A tuple containing:
+            - planes (list): A list of open3d.geometry.PointCloud objects, each
+                representing a segmented plane.
+            - models (list): A list of plane model parameters for each segmented
+                plane.
+            - remaining (o3d.geometry.PointCloud): The remaining points in the
+                point cloud after plane segmentation.
+    """
+    planes, models, remaining = [], [], pcd
+    count = 0
+    while len(remaining.points) > min_inliers and count < max_iterations:
+        model, inliers = remaining.segment_plane(
+            distance_threshold=distance_threshold,
+            ransac_n=3,
+            num_iterations=1000
+        )
+        if len(inliers) < min_inliers:
+            break
+        plane = remaining.select_by_index(inliers)
+        remaining = remaining.select_by_index(inliers, invert=True)
+        planes.append(plane)
+        models.append(model)
+        count += 1
+    return planes, models, remaining
+
+def plot_planes_matplotlib(planes, leftover=None) -> None:
+    """Plots segmented planes in 3D using matplotlib.
+
+    This function visualizes the segmented planes in a 3D scatter plot using
+    matplotlib. Each plane is represented by its points, and any leftover points
+    are shown in gray.
+
+    Args:
+        planes (list): A list of open3d.geometry.PointCloud objects, each
+            representing a segmented plane.
+        leftover (open3d.geometry.PointCloud, optional): The remaining points in
+            the point cloud after plane segmentation. If provided, these points
+            will be plotted in gray. Defaults to None.
+    """
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    for i, pl in enumerate(planes):
+        pts = np.asarray(pl.points)
+        ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], s=1, label=f"Plane {i+1}")
+    if leftover is not None and len(leftover.points) > 0:
+        pts = np.asarray(leftover.points)
+        ax.scatter(
+            pts[:, 0], pts[:, 1], pts[:, 2],
+            s=1,
+            color="gray",
+            label="Leftover"
+        )
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+def create_oobb_mesh_from_planes(planes, color='white') -> pv.MultiBlock:
+    """Creates a PyVista mesh from the oriented bounding boxes of planes.
+
+    This function generates a mesh for each plane's oriented bounding box (OOBB)
+    and combines them into a PyVista MultiBlock object. Each OOBB is represented
+    as a polydata object with its corners and faces defined.
+
+    Args:
+        planes (list): A list of open3d.geometry.PointCloud objects, each
+            representing a segmented plane.
+        color (str, optional): The color to apply to the OOBB meshes. 
+            Defaults to 'white'.
+
+    Returns:
+        pv.MultiBlock: A PyVista MultiBlock object containing the OOBB meshes 
+            for each plane.
+    """
+    box_meshes = []
+    for i, pl in enumerate(planes):
+        oobb = pl.get_oriented_bounding_box()
+        corners = np.asarray(oobb.get_box_points())
+        faces = [
+            [3, 0, 1, 2], [3, 0, 2, 3],
+            [3, 4, 5, 6], [3, 4, 6, 7],
+            [3, 0, 1, 5], [3, 0, 5, 4],
+            [3, 1, 2, 6], [3, 1, 6, 5],
+            [3, 2, 3, 7], [3, 2, 7, 6],
+            [3, 3, 0, 4], [3, 3, 4, 7]
+        ]
+        faces_flat = np.hstack(faces)
+        pv_box = pv.PolyData(corners, faces_flat)
+        pv_box["plane_id"] = np.full(len(pv_box.points), i)
+        box_meshes.append(pv_box)
+    return pv.MultiBlock(box_meshes)
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a 3D mesh and visualize it.")
-    parser.add_argument('--output', type=str, default='mesh.pcd', help='Output file name for the mesh')
-    parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
-    parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
-    parser.add_argument('--pcd-size', type=int, default=50000, help='Number of points to sample from the mesh for point cloud generation')
-
+    """Main function to create a 3D mesh, segment planes, and visualize."""
+    parser = argparse.ArgumentParser(
+        description="Create a 3D mesh and visualize it."
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='mesh.pcd',
+        help='Output file name for the mesh'
+    )
+    parser.add_argument(
+        '--visualize',
+        action='store_true',
+        help='Visualize the mesh using PyVista'
+    )
+    parser.add_argument(
+        '--glassMaze',
+        type=strToBool,
+        default=False,
+        help='Create a glass maze structure'
+    )
+    parser.add_argument(
+        '--pcd-size',
+        type=int,
+        default=50000,
+        help='Number of points to sample from the mesh'
+    )
     args = parser.parse_args()
+
     outputFile = args.output
 
     if args.glassMaze:
-        # Generate the environment mesh of the glass maze first shown in the 
-        # space cobot demo video (some changes were made to the original mesh,
-        # in order to make the first trajectory the only one that is feasible)
         cube1 = trimesh.creation.box(extents=(1, 0.1, 5))
         cube2 = trimesh.creation.box(extents=(1, 0.1, 5))
         cube1.apply_translation([-0.6, 0, 0])
         cube2.apply_translation([0.6, 0, 0])
-        
         cube3 = trimesh.creation.box(extents=(0.1, 1, 5))
         cube4 = trimesh.creation.box(extents=(0.1, 5, 5))
-
         cube3.apply_translation([1, 1.9, 0])
         cube4.apply_translation([1, -1.5, 0])
-
         cube5 = trimesh.creation.box(extents=(2.5, 5, 0.1))
         cube5.apply_translation([0, 1.1, 2.5])
-
         cube6 = trimesh.creation.box(extents=(0.1, 5, 1))
         cube7 = trimesh.creation.box(extents=(0.1, 5, 1))
         cube6.apply_translation([1, 1.7, 2.7])
         cube7.apply_translation([1, 1.7, 4.1])
-
-
         finalMesh = cube1 + cube2 + cube3 + cube4 + cube5 + cube6 + cube7
-        pcd = sample_tmmesh(finalMesh, number_of_points=args.pcd_size)
-
     else:
-        # Create a cube
         cube1 = trimesh.creation.box(extents=(0.5, 10, 10))
-
-        # Create a smaller cube to subtract
         cube2 = trimesh.creation.box(extents=(0.75, 0.6, 0.3))
         cube2.apply_translation([0.0, 3, 3])
-
         cube8 = trimesh.creation.box(extents=(2., 1.00, 1.00))
         cube8.apply_translation([1.0, 3, 3])
-
-        cube9= trimesh.creation.box(extents=(2.00, 0.6, 0.3))
+        cube9 = trimesh.creation.box(extents=(2.00, 0.6, 0.3))
         cube9.apply_translation([1.0, 3, 3])
-
         cube8 = cube8.difference(cube9)
-
-
         cube1 = cube1.difference(cube2)
-
-        cube3 = trimesh.creation.box(extents=(0.5, 10, 10))
-        cube3.apply_translation([-0.85, 0, 0])
-        # Perform boolean difference
-
         cube4 = trimesh.creation.box(extents=(1.5, 10, 0.25))
         cube4.apply_translation([-0.50, 0, 5])
-
         cube5 = trimesh.creation.box(extents=(1.5, 9.5, 0.25))
         cube5.apply_translation([-0.50, -0.5, 0])
-            
-
         cube6 = trimesh.creation.box(extents=(1.5, 0.25, 10))
         cube6.apply_translation([-0.50, 5, 0])
-
         cube7 = trimesh.creation.box(extents=(1.5, 10, 0.25))
         cube7.apply_translation([-0.50, 0, -5])
+        finalMesh = cube1 + cube4 + cube5 + cube6 + cube7 + cube8
 
-        finalMesh = cube1 +  cube4 + cube5 + cube6 + cube7 + cube8 #+ cube3
-        pcd = sample_tmmesh(finalMesh, number_of_points=args.pcd_size)
+    pcd = sample_tmesh(finalMesh, number_of_points=args.pcd_size)
+    EnvironmentHandler(pcd)
 
-    env = EnvironmentHandler(pcd)
+    print("Segmenting planes...")
+    timeStart = time.time()
+    planes, models, remaining = auto_segment_planes(pcd)
+    print(f"Plane segmentation took {time.time() - timeStart:.4f} seconds.")
+    print(f"Found {len(planes)} planes in the point cloud.")
+    
+    # Plot plane segmentation
+    plot_planes_matplotlib(planes, leftover=remaining)
+
+    # Generate mesh from OOBBs of planes
+    print("Creating OOBB meshes...")
+    oobb_meshes = create_oobb_mesh_from_planes(planes)
+
+    # Visualize in PyVista
     if args.visualize:
         pv_ = pv.Plotter()
-        #pv_.add_mesh(o3d_to_pv(tmesh_to_o3d(finalMesh)), show_edges=True, color='white', line_width=0.5, point_size=5, show_scalar_bar=False)
-        pv_.add_mesh(env.voxel_mesh, show_edges=True, color='green', line_width=0.5, point_size=5, show_scalar_bar=False)
-        pv_.add_mesh(pv.PolyData(np.asarray(pcd.points)), color='blue', point_size=2, render_points_as_spheres=True)
+        for box in oobb_meshes:
+            pv_.add_mesh(box, show_edges=True, opacity=0.5)
+        pv_.add_mesh(
+            pv.PolyData(np.asarray(pcd.points)),
+            color='blue',
+            point_size=2, 
+            render_points_as_spheres=True)
         pv_.add_axes()
         pv_.show_grid()
-
-
-    if args.glassMaze:
-        _spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
-
-        spaceCobot = _spaceCobot.copy()
-        transform = np.eye(4)
-        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
-        pos = np.array([0.5, 2.0, 1.0])
-        transform[:3, :3] = rot.as_matrix()
-        transform[:3, 3] = pos
-        spaceCobot.transform(transform)
-        pv_.add_mesh(spaceCobot, color='red', show_edges=True)
-
-        spaceCobot = _spaceCobot.copy()
-        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
-        pos = np.array([0.5, 5.0, 1.0])
-        transform[:3, :3] = rot.as_matrix()
-        transform[:3, 3] = pos
-        spaceCobot.transform(transform)
-        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
-
-        spaceCobot = _spaceCobot.copy()
-        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
-        pos = np.array([0.5, 5.0, 6.0])
-        transform[:3, :3] = rot.as_matrix()
-        transform[:3, 3] = pos
-        spaceCobot.transform(transform)
-        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
-
-    else: 
-        _spaceCobot = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
-
-        spaceCobot = _spaceCobot.copy()
-        transform = np.eye(4)
-        rot = trf.Rotation.from_euler('xyz', [0, 75, 0], degrees=True)
-        pos = np.array([-0.375, 0.0, -3.0])
-        transform[:3, :3] = rot.as_matrix()
-        transform[:3, 3] = pos
-
-        spaceCobot.transform(transform)
-        pv_.add_mesh(spaceCobot, color='red', show_edges=True)
-
-        spaceCobot = _spaceCobot.copy()
-        rot = trf.Rotation.from_euler('xyz', [0, 0, 0], degrees=True)
-        pos = np.array([-0.375, 0.0, 3.0])
-        transform[:3, :3] = rot.as_matrix()
-        transform[:3, 3] = np.array([0.0, 3.0, 3.0]) 
-        spaceCobot.transform(transform)
-        pv_.add_mesh(spaceCobot, color='green', show_edges=True)
-    
-    if args.visualize:
         pv_.show()
-    o3d.io.write_point_cloud(outputFile, pcd)
+
     print(f"Point cloud saved to {outputFile}")
+    o3d.io.write_point_cloud(outputFile, pcd)
 
 if __name__ == "__main__":
     main()
