@@ -33,7 +33,7 @@ dependencies = [
 #run-3d = "3D.main:main"
 rrtSin = "RRT.RRT:main"
 rrtOpt = "RRT.main:main"
-rrtData = "RRT.DataProcessing:main"
+rrtData = "RRTOptimization.DataProcessing:main"
 
 
 [tool.ruff]
