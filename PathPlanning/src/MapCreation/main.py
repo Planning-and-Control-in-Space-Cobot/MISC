@@ -15,6 +15,7 @@ import trimesh
 import open3d as o3d
 import pyvista as pv
 import matplotlib.pyplot as plt
+import pickle as pkl
 
 from Environment import EnvironmentHandler
 
@@ -262,6 +263,13 @@ def main():
         default=50000,
         help='Number of points to sample from the mesh'
     )
+    parser.add_argument(
+        '--measure-times', 
+        type=strToBool,
+        default=False,
+        help='Make a careful measurement of the time taken in each step while' \
+        'changing the number of sampled points in the point cloud.'
+    )
     args = parser.parse_args()
 
     outputFile = args.output
@@ -302,6 +310,123 @@ def main():
         cube7.apply_translation([-0.50, 0, -5])
         finalMesh = cube1 + cube4 + cube5 + cube6 + cube7 + cube8
 
+    values = list(range(5000, args.pcd_size + 1, 5000))
+
+    times = {
+        "number_of_points": values,
+        "pcdGenerationTime" : [],
+        "coallisionMeshGenerationTimes" : []
+    }
+    if args.measure_times:
+        print(f"Measuring times for point clouds with {values} points")
+
+        # Prepare the plotter and open the GIF just once
+        #pv_ = pv.Plotter(off_screen=True)
+        #pv_.open_gif("orbit.gif")
+        #pv_.add_axes()
+        #pv_.show_grid()
+
+        #center = np.array([0, 4, 3])  # Focal point of camera
+        #radius = 15
+        #elevation = 3
+        #n_frames = 60
+
+        for v in values:
+            print(f"Sampling {v} points from the mesh...")
+            timeStart = time.time()
+            pcd = sample_tmesh(finalMesh, number_of_points=v)
+            times["pcdGenerationTime"].append(time.time() - timeStart)
+
+            timeStart = time.time()
+            env = EnvironmentHandler(pcd)
+            times["coallisionMeshGenerationTimes"].append(time.time() - timeStart)
+
+            # Remove all actors from the previous round
+
+            """
+            pv_.clear_actors()
+
+            # Add new point cloud
+            cloud_actor = pv_.add_mesh(
+                pv.PolyData(np.asarray(pcd.points)),
+                color='blue',
+                point_size=5,
+                render_points_as_spheres=True,
+                name="point_cloud"
+            )
+
+            # Add new voxel mesh
+            voxel_actor = pv_.add_mesh(
+                env.voxel_mesh,
+                color='red',
+                show_edges=True,
+                opacity=0.5,
+                name="voxel_mesh"
+            )
+
+            # Add text showing number of points
+            label_actor = pv_.add_text(
+                f"{v} points",
+                position="upper_left",
+                font_size=14,
+                name="label"
+            )
+
+            for i in range(n_frames):
+                theta = 2 * np.pi * i / n_frames
+                x = center[0] + radius * np.cos(theta)
+                y = center[1] + radius * np.sin(theta)
+                z = center[2]
+
+                pv_.camera_position = [
+                    (x, y, z),  # Camera on circle
+                    center,     # Look at center
+                    (0, 0, 1)   # Z-up
+                ]
+
+                pv_.render()
+                pv_.write_frame()
+
+        # Finalize and show (optional)
+        pv_.close() """
+        plt.subplot(1, 2, 1)
+        plt.plot(
+            times["number_of_points"],
+            times["pcdGenerationTime"],
+            marker='o',
+            linestyle='-',
+            color='blue',
+            label='PCD Generation Time'
+        )
+        plt.xlabel("Number of Points")
+        plt.ylabel("Time (s)")
+        plt.title("Point Cloud Generation Time")
+        plt.grid(True)
+        plt.legend()
+        plt.subplot(1, 2, 2)
+        plt.plot(
+            times["number_of_points"],
+            times["coallisionMeshGenerationTimes"],
+            marker='o',
+            linestyle='-',
+            color='red',
+            label='Collision Mesh Generation Time'
+        )
+        plt.xlabel("Number of Points")
+        plt.ylabel("Time (s)")
+        plt.title("Collision Mesh Generation Time")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        with open("times.pkl", "wb") as f:
+            pkl.dump(times, f)
+
+
+
+
+
+            
     pcd = sample_tmesh(finalMesh, number_of_points=args.pcd_size)
     EnvironmentHandler(pcd)
 
