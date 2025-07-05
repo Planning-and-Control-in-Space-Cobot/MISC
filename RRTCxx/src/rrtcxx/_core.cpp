@@ -162,11 +162,6 @@ public:
                         auto pos = node.position;
                         auto quat = node.orientation;
                         auto collision = isCollisionFree(node);
-
-                        std::cout << "Position: " << pos.transpose()
-                                    << ", Orientation: " << quat.coeffs().transpose()
-                                    << ", Collision Free: " << collision << std::endl;
-
                     }
 
 
@@ -201,7 +196,6 @@ private:
     double minX, maxX, minY, maxY, minZ, maxZ;
 
     void setupEnvironment() {
-
         
         envModel = std::make_shared<coal::BVHModel<coal::OBBRSS>>();
         envModel->beginModel(vertexLocation.rows(), triangleIndices.rows());
@@ -324,10 +318,10 @@ PYBIND11_MODULE(_core, m) {
         .def("interpolate", &State::interpolate)
         .def_property_readonly("q", [](const State& self) {
             return Eigen::Vector4d(
-                self.orientation.w(),
                 self.orientation.x(),
                 self.orientation.y(),
-                self.orientation.z()
+                self.orientation.z(),
+                self.orientation.w()
             );
         });
 
