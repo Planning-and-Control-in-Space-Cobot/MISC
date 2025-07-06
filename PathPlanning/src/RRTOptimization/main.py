@@ -1,30 +1,27 @@
 import os
 import sys
+import time 
+import argparse
+from colorama import Fore, Style
+
 import numpy as np
 import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
 import pickle
 
-from colorama import Fore, Style
-
-
 # Add the executable directory to the system path
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 
-
 from Environment import EnvironmentHandler
-from RRTOptimization import (
-    Robot,
-    RRTPathOptimization,
-    Obstacle,
-    OptimizationState,
-)
 
-import time as time
+from Robot import Robot
+from Obstacle import Obstacle
+from OptimizationState import OptimizationState
+from LocalOptimalPlanner import LocalOptimalPlanner
+from GlobalOptimalPlanner import GlobalOptimalPlanner
 
-import argparse
 
 
 def createPyBox(axis):
@@ -266,7 +263,6 @@ def main():
         description="RRT Path Planning and Optimization"
     )
 
-
     parser.add_argument(
         "--path", 
         "-p",
@@ -297,7 +293,6 @@ def main():
         os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
     )
     environment = EnvironmentHandler(pcd)
-    # environment._debugPointCloud(#
 
     path = np.load(os.path.join(script_dir, args.path))
     originalPosition = path["positions"]
@@ -315,10 +310,11 @@ def main():
 
     # Set velocities and angular velocities for the initial path
     for i in range(len(initialPath) - 1):
-        initialPath[i].v = np.clip((initialPath[i+1].x - initialPath[i].x) / dt / 2, minV, maxV)
-        initialPath[i].w = (1 /(2* dt)) * (trf.Rotation.from_quat(initialPath[i+1].q) * trf.Rotation.from_quat(initialPath[i].q).inv()).as_rotvec()
-        
-
+        v = (initialPath[i+1].x - initialPath[i].x) / dt
+        initialPath[i].v = np.clip(v, minV, maxV)
+        w = (1 / dt) * (trf.Rotation.from_quat(initialPath[i+1].q) * 
+            trf.Rotation.from_quat(initialPath[i].q).inv()).as_rotvec()
+        initialPath[i].w = np.clip(w, minW, maxW)
 
     print("Creating Robot object")
     A = np.load(os.path.join(script_dir, "A_matrix.npy"))
@@ -331,7 +327,6 @@ def main():
         m,
     )
 
-    # min_corner=[1.5, 1, 0], max_corner=[4., 6, 10
     stateLowerBound = np.hstack([
         np.array([0.0, 3.0, 0.0]),  # x, y, z
         minV,
@@ -346,30 +341,12 @@ def main():
         maxW,
     ])
 
-    # stateLowerBound = np.array([0, -25, 0, -5, -5, -5, -1, -1, -1, -1, -2, -2, -2])
-    # stateUpperBound = np.array([25, 25, 2, 5, 5, 5, 1, 1, 1, 1, 2, 2, 2])
-
-    numStepsOptimized = 10 # Number of steps from the RRT considered by the optimization problem at each iteration
-    numTimesOptimized = 3 # Number of times we need to optimize the trajectory succefully before moving to the next step
-    rrtOpt = RRTPathOptimization(
-        stateLowerBound, stateUpperBound, environment, robot
-    )
 
     optimizationPath = initialPath.copy()
-    xi = np.zeros(13)
-    xf = np.zeros(13)
-    xi[0:3] = optimizationPath[0].x
-    xi[3:6] = optimizationPath[0].v
-    xi[6:10] = optimizationPath[0].q
-    xi[10:13] = optimizationPath[0].w
-
-    print(f"xi: {xi}")
-    xf[0:3] = optimizationPath[-1].x
-    xf[6:10] = optimizationPath[-1].q
-    print(f"xf: {xf}")
+    xi = optimizationPath[0]
+    xf = optimizationPath[-1]
 
     dt = 0.2
-    optimizedPaths = [optimizationPath[0]] # Store the point already optimized
 
     obstacles, maxDistances, _,  _  = robot.getObstacles(
         environment,
@@ -381,14 +358,6 @@ def main():
 
     print(f"Number of obstacles detected: {len(obstacles)}")
     print(f"Number of max distances: {len(maxDistances)}")
-
-    #drawOptimizationProblem(
-    #    environment, 
-    #    obstacles, 
-    #    robot, 
-    #    optimizationPath,
-    #    fullProblem=False
-    #)
 
     numSuccessfulOptimizationsRequired = 10
     optimizationHorizon = 10
@@ -501,43 +470,66 @@ def main():
                 """
                 #drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
 
-    prev_u = np.zeros((6, len(initialPath)))             
+    globalOptimalPlanner = GlobalOptimalPlanner(
+        stateMinValues=stateLowerBound, 
+        stateMaxValues=stateUpperBound,
+        env=environment,
+        robot=robot,
+    )
+    optimizedPaths = []
+    prevCost = 0
     for i in range(50):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
 
         startTime = time.time()
-        rrtOpt.setup_optimization(optimizationPath, obstacles, maxDistances, prev_u, xi=xi, xf=xf)
-
-        sol = rrtOpt.optimize(
-            optimizationPath, dt=dt, prev_u=prev_u
+        optimizedTrajectory, newDt, cost = globalOptimalPlanner.optimize(
+            initialPath, 
+            obstacles, 
+            maxDistances, 
+            dt, 
+            xi, 
+            xf
+            
         )
-        optimizationTime = time.time() - startTime
-
-        _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
-        print(f"Time taken for optimization: {optimizationTime:.2f} seconds")
 
         # Evaluate the trajectory to ensure it is valid
         obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
             environment, 
-            _optimizationPath, 
-            optimizationPath, 
+            optimizedTrajectory, 
+            initialPath, 
             obstacles, 
             maxDistances    
         )
 
         if obstacles is None:
+            print(Fore.RED + "No obstacles detected" + Style.RESET_ALL)
             break
+        
+        optimizedPaths.append((initialPath, optimizedTrajectory, obstacles, collisionObstacles, maxDistances, newDt))
 
-        optimizedPaths.append((optimizationPath, _optimizationPath, prev_u, _prev_u, dt, _dt, obstacles, maxDistances, cost, optimizationTime, anyCollision))
         if not anyCollision:
-#            pv_ = rrtOpt.visualize_trajectory(
-#                optimizationPath, _optimizationPath, environment.voxel_mesh, None, []
-#            )
-#            pv_.show()
-            optimizationPath = _optimizationPath
-            prev_u = _prev_u
-            dt = _dt
-
+            print(Fore.GREEN + f"prev Dt {dt} new Dt {newDt} diff {np.abs(newDt - dt)}" + Style.RESET_ALL)
+            print(Fore.GREEN + 
+                f"Cost of the optimized path: {cost:.2f}"
+                f"Prev Cost {prevCost:.2f}"
+                f"Diff {np.abs(cost - prevCost) / prevCost:.2f}" + Style.RESET_ALL
+            )
+            if np.abs(newDt - dt) < 0.01 and (np.abs(cost - prevCost) / prevCost) < 0.01: 
+                globalOptimalPlanner.visualizeTrajectory(
+                    optimizationPath, 
+                    optimizedTrajectory, 
+                    environment.voxel_mesh,    
+                )
+                return
+            initialPath = optimizedTrajectory
+            dt = newDt
+            prevCost = cost
+            print(Fore.GREEN + 
+                f"Optimization for {len(initialPath)} with "
+                f"{len(obstacles)} obstacles successful,"
+                f"in {time.time() - startTime:.2f} seconds."
+                f"dt {dt} cost {cost:.2f}" + Style.RESET_ALL
+            )
         else:
             pass
             #drawCollisions(
@@ -550,11 +542,6 @@ def main():
             #)
 
             
-    pv_ = rrtOpt.visualize_trajectory(
-        initialPath, optimizedPaths[-1][0], environment.voxel_mesh, None, [] 
-    )
-    pv_.show()
-
     with open(os.path.join(script_dir, "optimizedPath.pkl"), "wb") as f:
         pickle.dump(optimizedPaths, f)
     

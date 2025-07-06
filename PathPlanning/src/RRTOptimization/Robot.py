@@ -153,10 +153,6 @@ class face():
         if np.dot(normal, R.apply(self.normal)) > -0.2:
             # If the normal of the face is not facing the obstacle, we ignore it
             return None
-        print(
-            f"iter {iter} Face normal: {R.apply(self.normal)}, Obstacle normal: {normal}, dot: {np.dot(normal, R.apply(self.normal))} = center offset {self.centerOffset}"
-        )
-
         """
         pv_ = pv.Plotter()
         pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
@@ -386,7 +382,13 @@ class Robot(Model):
                         _obstacles.append(obs)
                         obstacles.append(obs)
             if _minDistance == []:
-                return None, None, None, None
+                md, pt1, pt2, _ = environment.distance(
+                    self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
+                )
+                _minDistance.append(md)
+                obstacles.append(
+                    Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), md, i, pt1)
+                )
             
             maxDistance.append(max(_minDistance))
 
