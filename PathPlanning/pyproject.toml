@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "andre-rebelo-teixera", email = "andre.rebelo.teixeira@hotmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = "==3.12.3"
 dependencies = [
     "casadi>=3.6.7",
     "numpy>2.0",
@@ -27,14 +27,17 @@ dependencies = [
     "coal>=3.0.1",
     "colorama>=0.4.6",
     "numba>=0.61.2",
+    "imageio>=2.37.0",
 ]
 
 [project.scripts]
 #run-3d = "3D.main:main"
 rrtSin = "RRT.RRT:main"
-rrtOpt = "RRT.main:main"
+rrtOpt = "RRTOptimization.main:main"
+
 rrtData = "RRTOptimization.DataProcessing:main"
 map = "MapCreation:main.main"
+rrtOptPlot= "RRTOptimization.ResultsPlotter:main"
 
 
 [tool.ruff]

@@ -16,7 +16,7 @@ from typing import TypeVar, List, Optional, Tuple
 _T = TypeVar("_T", bound="Model")
 from typing_extensions import override
 
-from Obstacle import Obstacle
+from RRTOptimization.Obstacle import Obstacle
 from Environment import EnvironmentHandler
 
 

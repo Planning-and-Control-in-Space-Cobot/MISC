@@ -16,13 +16,14 @@ sys.path.append(script_dir)
 
 from Environment import EnvironmentHandler
 
-from Robot import Robot
 from Obstacle import Obstacle
+from Robot import Robot
 from OptimizationState import OptimizationState
 from LocalOptimalPlanner import LocalOptimalPlanner
 from GlobalOptimalPlanner import GlobalOptimalPlanner
 
-
+from Simulator import Simulator
+from Simulator.SpaceCobotModel import SpaceCobot
 
 def createPyBox(axis):
     """Create a PyVista box mesh with the given axis."""
@@ -243,6 +244,54 @@ def drawOptimizationProblem(environment, obstacles, robot, path, fullProblem=Fal
 
 
     return
+
+def localVsGlobalVsOriginal(
+    environment,
+    originalPath,
+    localOptimizedPath,
+    globalOptimizedPath,
+    robot,
+):
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+    pv_.add_axes()
+    pv_.show_grid()
+
+    for p in originalPath:
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="green",
+            show_edges=True,
+            opacity=0.5,
+        )
+    
+    for p in localOptimizedPath:
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="blue",
+            show_edges=True,
+            opacity=0.5,
+        )
+    for p in globalOptimizedPath:
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="red",
+            show_edges=True,
+            opacity=0.5,
+        )
+    pv_.add_text("Original Path", position="upper_left", color="green")
+    pv_.add_text("Local Optimized Path", position="upper_right", color="blue")
+    pv_.add_text("Global Optimized Path", position="lower_left", color="red")
+    pv_.show()
 
 def main():
     parser = argparse.ArgumentParser(
@@ -476,8 +525,19 @@ def main():
         env=environment,
         robot=robot,
     )
+
+    localOptimalPlanner = LocalOptimalPlanner(
+        stateMinValues=stateLowerBound,
+        stateMaxValues=stateUpperBound,
+        env=environment,
+        robot=robot,
+    )
+
+    localSize = 10
+
     optimizedPaths = []
     prevCost = 0
+    firstOptimization = True
     for i in range(50):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
 
@@ -489,8 +549,44 @@ def main():
             dt, 
             xi, 
             xf
-            
         )
+        """
+        if not firstOptimization:
+            collision = []
+            for i in range(len(initialPath) - localSize):
+                localInitialPath = initialPath[i:+i+localSize]
+                localXi = localInitialPath[0]
+                localXf = localInitialPath[-1]
+                localObstacles = [obs for obs in obstacles if obs.iteration < i + localSize and obs.iteration >= i]
+
+                print(Fore.YELLOW + f"Local optimization for step {i} with {len(localObstacles)} obstacles" + Style.RESET_ALL)
+
+
+                localTime = time.time()
+                localOptimizdetrajectory, localDt, localCost = localOptimalPlanner.optimize(
+                    localInitialPath, 
+                    localObstacles,
+                    maxDistances[i:i+localSize],
+                    newDt, 
+                    localXi, 
+                    localXf, 
+                    i
+                )
+                print(Fore.YELLOW + f"Local optimization took {time.time() - localTime:.3f} seconds" + Style.RESET_ALL)
+                
+                _, _, localAnyCollision, _ = robot.getObstacles(
+                    environment, 
+                    localOptimizdetrajectory, 
+                    initialPath, 
+                    obstacles, 
+                    maxDistances    
+                )
+                if localAnyCollision:
+                    collision.append(i)
+
+            print(Fore.RED + f"Collisions detected in start {collision}" + Style.RESET_ALL)
+            print(Fore.GREEN + f"Good local trajectory in {[i for i in range(len(initialPath) - localSize) if i not in collision]}" + Style.RESET_ALL)
+        """
 
         # Evaluate the trajectory to ensure it is valid
         obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
@@ -500,21 +596,25 @@ def main():
             obstacles, 
             maxDistances    
         )
-
+        print(f"Number of obstacles considered: {len(obstacles)}")
+        if len(obstacles)  > 500:
+            for obs in obstacles:
+                print(f"Obstacle {obs.iteration} with closest point {obs.closestPointObstacle} and normal {obs.normal}")
+                
         if obstacles is None:
             print(Fore.RED + "No obstacles detected" + Style.RESET_ALL)
             break
         
+
         optimizedPaths.append((initialPath, optimizedTrajectory, obstacles, collisionObstacles, maxDistances, newDt))
 
         if not anyCollision:
-            print(Fore.GREEN + f"prev Dt {dt} new Dt {newDt} diff {np.abs(newDt - dt)}" + Style.RESET_ALL)
+            firstOptimization = False
             print(Fore.GREEN + 
-                f"Cost of the optimized path: {cost:.2f}"
-                f"Prev Cost {prevCost:.2f}"
-                f"Diff {np.abs(cost - prevCost) / prevCost:.2f}" + Style.RESET_ALL
-            )
-            if np.abs(newDt - dt) < 0.01 and (np.abs(cost - prevCost) / prevCost) < 0.01: 
+                  f"time maxValue : 0.01 - {np.abs(newDt - dt) / dt:.5f}\n"
+                  f"cost maxValue : 0.1 - {np.abs(cost - prevCost) / prevCost:.5f}" + Style.RESET_ALL,
+                  end="\n\n")
+            if np.abs(newDt - dt) / dt < 0.01 and (np.abs(cost - prevCost) / prevCost) < 0.1: 
                 globalOptimalPlanner.visualizeTrajectory(
                     optimizationPath, 
                     optimizedTrajectory, 

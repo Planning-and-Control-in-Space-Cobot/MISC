@@ -1,5 +1,6 @@
 import os 
 import sys
+import time
 from typing import List, Tuple
 
 import numpy as np 
@@ -13,7 +14,8 @@ from RRTOptimization.Robot import Robot
 from RRTOptimization.Obstacle import Obstacle
 from RRTOptimization.OptimizationState import OptimizationState
 
-class GlobalOptimalPlanner:
+
+class LocalOptimalPlanner:
     def __init__(self, 
                  stateMinValues: np.ndarray, 
                  stateMaxValues: np.ndarray,
@@ -31,7 +33,8 @@ class GlobalOptimalPlanner:
             maxDistances : List[float], 
             dt : float,
             xi : OptimizationState, 
-            xf : OptimizationState
+            xf : OptimizationState, 
+            start : int
     ) -> Tuple[List[OptimizationState], float]:
         """Optimize the path considering the full robot planned trajectory
         
@@ -50,6 +53,9 @@ class GlobalOptimalPlanner:
                 First state of the robot in the optimization problem.
             xf (OptimizationState):
                 Last state of the robot in the optimization problem.
+            start (int):
+                Index of the current state in the optimization path for the 
+                initial trajectory
             
         Returns:
             list[OptimizationState]:
@@ -57,6 +63,7 @@ class GlobalOptimalPlanner:
             dt (float):
                 Time step used in the optimization process.
         """
+        timestart = time.time()
         opti = ca.Opti()
         N = len(initialPath)
          
@@ -67,40 +74,55 @@ class GlobalOptimalPlanner:
         opti.subject_to(opti.bounded(0, _dt, 1.0))
 
         opti.subject_to(x[:, 0] == xi.get_state())
-        opti.subject_to(x[:, -1] == xf.get_state())
+        #opti.subject_to(x[:, -1] == xf.get_state())
 
+        dynamicTime = time.time()
         for i in range(N - 1):
             opti.subject_to(x[:, i+1] == self.robot.f(x[:, i], u[:, i], _dt))
-        
+        print(f"Setup dynamics constraints time: {time.time() - dynamicTime:.4f} seconds")
+
+        obstacleAvoidanceTime = time.time() 
+        totalObstacles = 0
         for i in range(1, N):
             pos = x[0:3, i]
             R_q = sc.Rotation.from_quat(x[6:10, i])
             maxDistance = maxDistances[i]
             
-            _obstacles = [o for o in obstacles if o.iteration == i]
+            _obstacles = [o for o in obstacles if o.iteration == i + start]
+            totalObstacles  += len(_obstacles)
             
             for obs in _obstacles:
                 for v in self.robot.getVertices():
                     opti.subject_to(
-                        obs.normal.reshape((1, 3)) @ (R_q.as_matrix() @ v + pos) >=
+                        obs.normal.reshape((1, 3)) @ (R_q.as_matrix() @ v + pos) >= 
                         obs.normal.reshape((1, 3)) @ obs.closestPointObstacle + obs.safetyMargin
                     )
                 
                 opti.subject_to(
-                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 16*maxDistance**2
+                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
                 )
-    
+        print(f"Setup obstacle avoidance constraints time: {time.time() - obstacleAvoidanceTime:.4f} seconds with {totalObstacles} obstacles")
+
+        boundariesTime = time.time()
         opti.subject_to(opti.bounded(-3, u, 3))
         opti.subject_to(opti.bounded(self.stateMinValues, x, self.stateMaxValues))
         
-        for i in range(N):
-            opti.subject_to(ca.sumsqr(x[6:10]) == 1)
-        
-        cost = 0
-        cost += 100000 * _dt
-        for i in range(N):
-            cost += u[:, i].T @ 0.1 @ u[:, i]
+        #for i in range(1, N):
+        #    opti.subject_to(ca.sumsqr(x[6:10]) == 1)
+        print(f"Setup boundaries constraints time: {time.time() - boundariesTime:.4f} seconds")
 
+        costTime = time.time() 
+        cost = 0
+        cost += 1000 * _dt
+        for i in range(1, N):
+            cost += u[:, i].T @ 0.1 @ u[:, i]
+        
+        for i in range(1, N):
+            cost += 0.01 * ca.sumsqr(x[0:3, i] - xf.x)
+            cost += 1 - ca.dot(x[6:10, i], xf.q)**2
+        
+        print(f"Setup cost time: {time.time() - costTime:.4f} seconds")
+        timeStart = time.time()
         opti.minimize(cost)
         opti.solver(
             "ipopt", 
@@ -109,13 +131,19 @@ class GlobalOptimalPlanner:
             }, 
             {
                 "max_iter" : 100,
-                "print_level" : 0,
+                "print_level" : 0, 
+                # We are using wall time since we want to limit the total time 
+                # of optimization and not only the time in cpu
+                "max_wall_time" : 0.5, 
                 "linear_solver" : "ma97",
                 "mu_strategy" : "adaptive",
                 "warm_start_init_point" : "yes",
+                "nlp_scaling_method": "equilibration-based",
                 "hessian_approximation" : "limited-memory",
             }
         )
+        endTime = time.time()
+        print(f"Setup time: {endTime - timestart:.4f} seconds")
 
         for i in range(N):
             opti.set_initial(x[:, i], initialPath[i].get_state())
@@ -125,13 +153,17 @@ class GlobalOptimalPlanner:
         try:
             sol = opti.solve_limited()
         except RuntimeError as e:
+            opti.debug.show_infeasibilities()
             print(f"Optimization failed: {e}")
-            return initialPath, dt
+            for i, o in zip(xi.get_state(), opti.debug.value(x[:, 0])):
+                print(f"Initial state {i} -> {o} {i - o}")
+
+            
+
+            return None, None, None
 
         x = sol.value(x)
         u = sol.value(u) 
-        dt = sol.value(_dt)
-        _cost = sol.value(cost)
 
         optimizedPath = [OptimizationState(
             x=x[0:3, i], 
@@ -142,8 +174,7 @@ class GlobalOptimalPlanner:
             i=i)
         for i in range(N)]
 
-        return optimizedPath, dt, sol.value(cost)
-
+        return optimizedPath, sol.value(_dt), sol.value(cost)
     
     def visualizeTrajectory(
             self, 
