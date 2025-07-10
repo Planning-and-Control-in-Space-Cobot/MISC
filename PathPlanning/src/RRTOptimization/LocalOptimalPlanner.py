@@ -63,23 +63,19 @@ class LocalOptimalPlanner:
             dt (float):
                 Time step used in the optimization process.
         """
-        timestart = time.time()
+        #timestart = time.time()
         opti = ca.Opti()
         N = len(initialPath)
          
         x = opti.variable(13, N)
         u = opti.variable(6, N)
         
-        _dt = opti.variable(1)
-        opti.subject_to(opti.bounded(0, _dt, 1.0))
-
         opti.subject_to(x[:, 0] == xi.get_state())
-        #opti.subject_to(x[:, -1] == xf.get_state())
 
         dynamicTime = time.time()
         for i in range(N - 1):
-            opti.subject_to(x[:, i+1] == self.robot.f(x[:, i], u[:, i], _dt))
-        print(f"Setup dynamics constraints time: {time.time() - dynamicTime:.4f} seconds")
+            opti.subject_to(x[:, i+1] == self.robot.f(x[:, i], u[:, i], dt))
+        #print(f"Setup dynamics constraints time: {time.time() - dynamicTime:.4f} seconds")
 
         obstacleAvoidanceTime = time.time() 
         totalObstacles = 0
@@ -101,7 +97,7 @@ class LocalOptimalPlanner:
                 opti.subject_to(
                     ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
                 )
-        print(f"Setup obstacle avoidance constraints time: {time.time() - obstacleAvoidanceTime:.4f} seconds with {totalObstacles} obstacles")
+        #print(f"Setup obstacle avoidance constraints time: {time.time() - obstacleAvoidanceTime:.4f} seconds with {totalObstacles} obstacles")
 
         boundariesTime = time.time()
         opti.subject_to(opti.bounded(-3, u, 3))
@@ -109,25 +105,28 @@ class LocalOptimalPlanner:
         
         #for i in range(1, N):
         #    opti.subject_to(ca.sumsqr(x[6:10]) == 1)
-        print(f"Setup boundaries constraints time: {time.time() - boundariesTime:.4f} seconds")
+        #print(f"Setup boundaries constraints time: {time.time() - boundariesTime:.4f} seconds")
 
         costTime = time.time() 
         cost = 0
-        cost += 1000 * _dt
+        #cost += 10000 * ca.fabs(_dt - dt)
         for i in range(1, N):
-            cost += u[:, i].T @ 0.1 @ u[:, i]
+            cost += (u[:, i] - initialPath[i].u).T @ 0.1 @ (u[:, i] - initialPath[i].u)
         
         for i in range(1, N):
-            cost += 0.01 * ca.sumsqr(x[0:3, i] - xf.x)
-            cost += 1 - ca.dot(x[6:10, i], xf.q)**2
+            cost += ca.sumsqr(x[0:3, i] - initialPath[i].x)
+            cost += 10 * (1 - ca.dot(x[6:10, i], initialPath[i].q)**2)
+            cost += 0.001 * ca.sumsqr(x[3:6, i] - initialPath[i].v)
+            cost += 0.001 * ca.sumsqr(x[10:13, i] - initialPath[i].w)
         
-        print(f"Setup cost time: {time.time() - costTime:.4f} seconds")
+        #print(f"Setup cost time: {time.time() - costTime:.4f} seconds")
         timeStart = time.time()
         opti.minimize(cost)
         opti.solver(
             "ipopt", 
             {
-                "print_time" : False
+                "print_time" : False,
+                "expand" : True,
             }, 
             {
                 "max_iter" : 100,
@@ -143,24 +142,19 @@ class LocalOptimalPlanner:
             }
         )
         endTime = time.time()
-        print(f"Setup time: {endTime - timestart:.4f} seconds")
+        #print(f"Setup time: {endTime - timestart:.4f} seconds")
+
 
         for i in range(N):
             opti.set_initial(x[:, i], initialPath[i].get_state())
             opti.set_initial(u[:, i], initialPath[i].u.flatten())
-        opti.set_initial(_dt, dt)
 
         try:
             sol = opti.solve_limited()
         except RuntimeError as e:
             opti.debug.show_infeasibilities()
             print(f"Optimization failed: {e}")
-            for i, o in zip(xi.get_state(), opti.debug.value(x[:, 0])):
-                print(f"Initial state {i} -> {o} {i - o}")
-
-            
-
-            return None, None, None
+            return  None, None, None
 
         x = sol.value(x)
         u = sol.value(u) 
@@ -174,7 +168,7 @@ class LocalOptimalPlanner:
             i=i)
         for i in range(N)]
 
-        return optimizedPath, sol.value(_dt), sol.value(cost)
+        return optimizedPath, sol.value(cost), dt
     
     def visualizeTrajectory(
             self, 

@@ -293,6 +293,127 @@ def localVsGlobalVsOriginal(
     pv_.add_text("Global Optimized Path", position="lower_left", color="red")
     pv_.show()
 
+def drawLocalOptimalTrajectory(
+        environment, 
+        trajectory, 
+        robot, 
+        localOptimalTrajectory
+    ):
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=1.0)
+    pv_.add_axes()
+    pv_.show_grid()
+
+    for p, _ in trajectory:
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="blue",
+            show_edges=True,
+            opacity=0.5,
+        )
+    
+    for lo in localOptimalTrajectory:
+        x = lo.x
+        R = trf.Rotation.from_quat(lo.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="orange",
+            show_edges=True,
+            opacity=0.5,
+        )
+    pv_.show()
+
+def drawRealPathWithObstaclesAndCollisions(
+        environment,
+        robot, 
+        realPath, 
+        collision, 
+        obstacles, 
+        index = None,
+        start = 0,
+):
+    if index is None:
+        index = range(len(realPath))
+        
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+
+    for i, (p, _) in enumerate(realPath):
+        if i not in index:
+            continue
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="blue",
+            show_edges=True,
+            opacity=0.5,
+        )
+    
+    for o in obstacles:
+        if not o.iteration + start in index:
+            continue
+    
+        plane = pv.Plane(
+            center=o.closestPointObstacle,
+            direction=o.normal
+        )
+        arrow = pv.Arrow(
+            start=o.closestPointObstacle,
+            direction=o.normal,
+            scale=0.1,
+            tip_length=0.2,
+        )
+        pv_.add_mesh(
+            plane,
+            color="red",
+            show_edges=True,
+            line_width=1.0,
+        )
+        pv_.add_mesh(
+            arrow,
+            color="red",
+            show_edges=True,
+            line_width=1.0,
+        )   
+
+
+    for c in collision:
+        if not c.iteration in index:
+            continue
+
+        plane = pv.Plane(
+            center=c.closestPointObstacle,
+            direction=c.normal
+        )
+        arrow = pv.Arrow(
+            start=c.closestPointObstacle,
+            direction=c.normal,
+            scale=0.1,
+            tip_length=0.2,
+        )
+        pv_.add_mesh(
+            plane,
+            color="green",
+            show_edges=True,
+            line_width=1.0,
+        )
+        pv_.add_mesh(
+            arrow,
+            color="green",
+            show_edges=True,
+            line_width=1.0,
+        )
+    
+    pv_.add_axes()
+    pv_.show_grid()
+    pv_.show()
+
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -390,6 +511,10 @@ def main():
         maxW,
     ])
 
+    spaceCobot = SpaceCobot(m, J, A)
+    simulator = Simulator(
+        spaceCobot
+    )
 
     optimizationPath = initialPath.copy()
     xi = optimizationPath[0]
@@ -538,6 +663,195 @@ def main():
     optimizedPaths = []
     prevCost = 0
     firstOptimization = True
+
+    ## Get First Global Solution
+    optimizationSucessful = False
+    while not optimizationSucessful:
+        Starttime = time.time()
+        optimizedTrajectory, newDt, cost = globalOptimalPlanner.optimize(
+            initialPath, 
+            obstacles, 
+            maxDistances, 
+            dt, 
+            xi, 
+            xf
+        )
+        print(f"Global optimization took {time.time() - Starttime:.3f} seconds")
+
+        obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
+            environment, 
+            optimizedTrajectory, 
+            initialPath, 
+            obstacles, 
+            maxDistances    
+        )
+
+        if not anyCollision:
+            initialPath = optimizedTrajectory
+            dt = newDt
+            prevCost = cost
+            optimizationSucessful = True
+
+    
+    np.set_printoptions(precision=3, suppress=True, linewidth=200)
+    
+    print(Fore.GREEN + "Start Node : " + Style.RESET_ALL, initialPath[0].get_state())
+    print(Fore.GREEN + "Goal Node : " + Style.RESET_ALL, initialPath[-1].get_state())
+        
+    atGoalNode = False
+    goalNode = initialPath[-1]
+    localPathSize = 10
+    realPath = [(initialPath[0], dt)]
+    
+    i =  0
+    while not atGoalNode:
+        # Do local optimization and simulation
+        # Get closest node in global optimal path
+        print(Fore.YELLOW + f"Iteration {i}" + Style.RESET_ALL)
+        closestNodeIndex = i
+
+        if closestNodeIndex + localPathSize < len(initialPath):
+            print(Fore.YELLOW + f"Closest node index: {closestNodeIndex}, local path size: {localPathSize}" + Style.RESET_ALL)
+            localInitialPath = initialPath[closestNodeIndex:closestNodeIndex + localPathSize - 1] 
+            localInitialPath.insert(0, realPath[-1][0])
+        else:
+            print(Fore.YELLOW + "Not enough nodes in initial path, extending with last node" + Style.RESET_ALL)
+            localInitialPath = [realPath[-1][0]]
+            localInitialPath.extend(initialPath[closestNodeIndex:])
+            diff = (closestNodeIndex + localPathSize) - len(initialPath)
+            localInitialPath.extend(diff * [initialPath[-1]])
+
+        obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
+            environment, 
+            localInitialPath, 
+            None, 
+            [], 
+            []
+        )
+
+        #for j in range(len(localInitialPath) - 1):
+        #    cState = localInitialPath[j].get_state()
+        #    cU = localInitialPath[j].u
+        #    nextState = localInitialPath[j + 1].get_state()
+        #    
+        #    nextSimulatedState = robot.numericalF(cState, cU, newDt)
+        #    diffs = nextState - nextSimulatedState
+        #    print((f"diffs : {diffs}"))
+
+        print(f"Any Collision: {anyCollision}")
+        print(f"Number of obstacles considered: {len(obstacles)}")
+        if anyCollision:
+            drawLocalOptimalTrajectory(
+                environment,
+                realPath, 
+                robot, 
+                localInitialPath
+            )
+                
+
+        startTime = time.time()
+        localOptimalTrajectory, _, stepDt = localOptimalPlanner.optimize(
+            localInitialPath, 
+            obstacles,
+            maxDistances, 
+            dt, 
+            localInitialPath[0],
+            localInitialPath[-1], 
+            0
+        )
+        print(f"Step took {time.time() - startTime:.3f} seconds")
+
+        print(f"start Dt : {dt} end Dt : {stepDt}")
+        np.set_printoptions(precision=3, suppress=True, linewidth=200)
+        for j in range(1, len(localOptimalTrajectory)):
+            x = localOptimalTrajectory[j].x
+            R = trf.Rotation.from_quat(localOptimalTrajectory[j].q)
+            if robot.collisionFree(x, R, environment):
+                pass
+                #print(f"Initial path {j+i} : {initialPath[j+i].get_state()}")
+                #print(f"Local optimal trajectory {j+i} : {localOptimalTrajectory[j].get_state()}")
+                #initialPath[j + i] = localOptimalTrajectory[j]
+            else:
+                print("collision detected in local optimal trajectory ", j+i )
+
+
+
+        nextStateOptimal = localOptimalTrajectory[1]
+        currentState = realPath[-1][0].get_state()
+
+        state = simulator.simulate(localOptimalTrajectory[0].get_state(), localOptimalTrajectory[0].u, stepDt)[:, -1]
+
+        state = OptimizationState(
+            x = state[0:3],
+            v = state[3:6],
+            q = state[6:10],
+            w = state[10:13]
+        )
+        i += 1
+
+        realPath.append((state, stepDt))
+        collisions = []
+        indexes = None
+        for j, (p, _) in enumerate(realPath):
+            x = p.x
+            R = trf.Rotation.from_quat(p.q)
+            
+            isCollision, depth, pt1, pt2, normal = environment.collide(robot.fcl_obj, x, R)
+            
+            if isCollision:
+                print(f"x : {x} R : {R.as_quat()}")
+                print(f"x : {initialPath[j].x} R : {trf.Rotation.from_quat(initialPath[j].q).as_quat()}")
+                print(f"localOptimalTrajectory {j} : {localOptimalTrajectory[1].get_state()}")
+                print(f"NumericalF {j} : {robot.numericalF(localOptimalTrajectory[0].get_state(), localOptimalTrajectory[0].u, stepDt)}")
+                print(f"State in realPath {j} : {p.get_state()}")
+                print(f"Collision detected at step {j} with depth {depth}")
+                indexes = indexes if indexes is not None else []
+                indexes.append(j)
+                collisions.append(Obstacle(
+                    closestPointObstacle=pt2,
+                    closestPointRobot=pt1,
+                    distance=-depth,
+                    normal=normal,
+                    iteration=j,
+                ))
+            
+        if indexes is not None:
+            drawRealPathWithObstaclesAndCollisions(
+                environment, 
+                robot, 
+                realPath, 
+                collisions, 
+                obstacles, 
+                indexes, 
+                i
+            )
+
+
+        if np.linalg.norm(state.x - goalNode.x) < 0.1:
+            atGoalNode = True
+
+
+    drawLocalOptimalTrajectory(
+        environment,
+        realPath,
+        robot,
+        []
+    )
+
+
+
+         
+
+
+
+
+
+
+
+
+
+
+
     for i in range(50):
         print(f'Num obstacle considered in this step : {len(obstacles)}')
 
