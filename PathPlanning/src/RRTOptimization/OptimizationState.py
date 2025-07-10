@@ -13,7 +13,7 @@ class OptimizationState:
         q: np.ndarray,
         v: np.ndarray = np.zeros((3)),
         w: np.ndarray = np.zeros((3)),
-        u: np.ndarray = np.zeros((6, 1)),
+        u: np.ndarray = np.zeros((6, )),
         i: np.ndarray = 0,
     ):
         """Initialized the optimization state
@@ -31,7 +31,7 @@ class OptimizationState:
         self.q = q  # quaternion
         self.q = self.q / np.linalg.norm(self.q)
         self.w = w  # angular velocity
-        self.u = u  # control inputs
+        self.u = u.reshape((6,))  # control inputs
         self.i = i  # index of the state in the optimization problem
 
     def get_state(self) -> np.ndarray:

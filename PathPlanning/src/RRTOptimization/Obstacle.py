@@ -9,7 +9,7 @@ class Obstacle:
         distance : float,
         iteration : int,
         closestPointRobot : np.ndarray ,
-        safetyMargin : float = 0.0):
+        safetyMargin : float = 0.0001):
         '''
             This class represents an obstacle in the optimization problem
 
