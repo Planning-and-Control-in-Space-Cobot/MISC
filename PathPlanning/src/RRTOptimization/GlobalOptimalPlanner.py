@@ -105,7 +105,8 @@ class GlobalOptimalPlanner:
         opti.solver(
             "ipopt", 
             {
-                "print_time" : False
+                "print_time" : False,
+                #"expand": True,
             }, 
             {
                 "max_iter" : 100,
