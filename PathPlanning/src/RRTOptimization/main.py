@@ -8,6 +8,7 @@ import numpy as np
 import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
+import matplotlib.pyplot as plt
 import pickle
 
 # Add the executable directory to the system path
@@ -538,111 +539,6 @@ def main():
     lookAhead = 10
     windowStart = 0
     prevU = np.zeros((6, optimizationHorizon + lookAhead))
-    """
-    while len(optimizedPaths) < len(initialPath):
-        numSuccessfulOptimizations =  0
-        firstRun = True
-        while numSuccessfulOptimizations < numSuccessfulOptimizationsRequired:
-            print(f"Optimizing path from step {windowStart} to {windowStart + optimizationHorizon} with {windowStart + optimizationHorizon + lookAhead} lookahead steps")
-            if windowStart + optimizationHorizon + lookAhead < len(initialPath):
-                initialTrajectory = optimizationPath[windowStart:windowStart + optimizationHorizon + lookAhead]
-            else:
-                diff = (windowStart + optimizationHorizon + lookAhead) - len(initialPath)
-                initialTrajectory = optimizationPath[windowStart:]
-                initialTrajectory.extend(diff * [initialPath[-1]])
-
-            if firstRun:
-                obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
-                    environment, 
-                    initialTrajectory,
-                    optimizationPath, 
-                    obstacles, 
-                    maxDistances
-                )
-                firstRun = False
-            xi = optimizedPaths[-1].get_state()
-            xf = initialTrajectory[-1].get_state()
-            print(f"xi: {xi}")
-            print(f"xf: {xf}")
-            print(f"InitialTrajectory {initialTrajectory[0].get_state()}")
-
-            rrtOpt.setup_optimization(
-                initialTrajectory, 
-                obstacles, 
-                maxDistances, 
-                prevU, 
-                xi=xi, 
-                xf=xf
-            )
-
-            sol = rrtOpt.optimize(
-                initialTrajectory, 
-                dt,
-                prevU
-            )
-
-            if  sol is None:
-                print(Fore.RED + "Optimization failed, trying again..." + Style.RESET_ALL)
-                exit(1)
-            
-            _optimizationPath, _prev_u, _dt, cost = rrtOpt.getSolution(sol)
-            print(f"Cost of the optimized path: {cost:.2f}")
-
-            # Evaluate the trajectory to ensure it is valid
-            print(f"Obstacles considered in this step: {len(obstacles)}")
-            obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
-                environment, 
-                _optimizationPath, 
-                optimizationPath, 
-                obstacles, 
-                maxDistances    
-            )
-            print(f"Number of obstacles considered: {len(obstacles)}")
-
-            if not anyCollision:
-                numSuccessfulOptimizations += 1
-                print(Fore.GREEN + f"Optimization successful, number of successful optimizations: {numSuccessfulOptimizations}" + Style.RESET_ALL)
-                print(f"Len of path len {len(optimizationPath)}")
-                optimizationPath[windowStart:windowStart + optimizationHorizon + lookAhead] = _optimizationPath
-                print(f"Len of path after optimization {len(optimizationPath)}")
-
-                prevU = _prev_u
-                dt = _dt
-                #for i, o in enumerate(_optimizationPath):
-                #    print(f"{i} - {o.get_state()}")
-                #optimizedPaths.append((_optimizationPath, _prev_u, _dt, cost))
-
-                if numSuccessfulOptimizations >= numSuccessfulOptimizationsRequired:
-                    firstRun = True
-
-                    optimizedPaths.extend(_optimizationPath[0:optimizationHorizon])
-                    if windowStart % 5 == 0:
-                        pv_ = rrtOpt.visualize_trajectory(
-                            initialPath,
-                            optimizedPaths, 
-                            environment.voxel_mesh,
-                            None, 
-                            [],
-                            [initialTrajectory[-1].i]
-                        )
-                        pv_.show()
-
-                    print(Fore.GREEN + "Optimization successful, moving to the next step" + Style.RESET_ALL)
-                    windowStart += optimizationHorizon
-                    prevU[:, 0:lookAhead] = prevU[:, :lookAhead]
-                    prevU[:, :lookAhead] = np.zeros((6, lookAhead))
-
-            else:
-                pv_ = rrtOpt.visualize_trajectory(
-                    initialPath, 
-                    _optimizationPath, 
-                    environment.voxel_mesh, 
-                    None,
-                )
-                pv_.show()
-                print(Fore.RED + "Collision detected, trying again..." + Style.RESET_ALL)
-                """
-                #drawEnvironmentAndNormals(environment, collisionObstacles, robot, _optimizationPath)
 
     globalOptimalPlanner = GlobalOptimalPlanner(
         stateMinValues=stateLowerBound, 
@@ -691,7 +587,11 @@ def main():
             dt = newDt
             prevCost = cost
             optimizationSucessful = True
-
+            print("Total Cost :", cost)
+        
+   # with open(os.path.join(script_dir, "optimizedPathNoExpand.pkl"), "wb") as f:
+   #     
+   #     pickle.dump(initialPath, f)
     
     np.set_printoptions(precision=3, suppress=True, linewidth=200)
     
@@ -703,12 +603,22 @@ def main():
     localPathSize = 10
     realPath = [(initialPath[0], dt)]
     
-    i =  0
+    optimizationTimes = []
+    obstacleConsidered = []
+    i = 0 
     while not atGoalNode:
         # Do local optimization and simulation
         # Get closest node in global optimal path
-        print(Fore.YELLOW + f"Iteration {i}" + Style.RESET_ALL)
-        closestNodeIndex = i
+        closestNodeIndex = i 
+        #print(Fore.YELLOW + f"Iteration {i}" + Style.RESET_ALL)
+        #closestNodeIndex = min(
+        #    range(len(initialPath)), 
+        #    key=lambda j: np.linalg.norm(initialPath[j].x - realPath[-1][0].x)
+        #)
+
+        print(Fore.YELLOW + f"Closest node index: {closestNodeIndex}" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"Closest node position: {initialPath[closestNodeIndex].x}" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"Current position: {realPath[-1][0].x}" + Style.RESET_ALL)
 
         if closestNodeIndex + localPathSize < len(initialPath):
             print(Fore.YELLOW + f"Closest node index: {closestNodeIndex}, local path size: {localPathSize}" + Style.RESET_ALL)
@@ -728,15 +638,6 @@ def main():
             [], 
             []
         )
-
-        #for j in range(len(localInitialPath) - 1):
-        #    cState = localInitialPath[j].get_state()
-        #    cU = localInitialPath[j].u
-        #    nextState = localInitialPath[j + 1].get_state()
-        #    
-        #    nextSimulatedState = robot.numericalF(cState, cU, newDt)
-        #    diffs = nextState - nextSimulatedState
-        #    print((f"diffs : {diffs}"))
 
         print(f"Any Collision: {anyCollision}")
         print(f"Number of obstacles considered: {len(obstacles)}")
@@ -759,28 +660,12 @@ def main():
             localInitialPath[-1], 
             0
         )
-        print(f"Step took {time.time() - startTime:.3f} seconds")
-
-        print(f"start Dt : {dt} end Dt : {stepDt}")
-        np.set_printoptions(precision=3, suppress=True, linewidth=200)
-        for j in range(1, len(localOptimalTrajectory)):
-            x = localOptimalTrajectory[j].x
-            R = trf.Rotation.from_quat(localOptimalTrajectory[j].q)
-            if robot.collisionFree(x, R, environment):
-                pass
-                #print(f"Initial path {j+i} : {initialPath[j+i].get_state()}")
-                #print(f"Local optimal trajectory {j+i} : {localOptimalTrajectory[j].get_state()}")
-                #initialPath[j + i] = localOptimalTrajectory[j]
-            else:
-                print("collision detected in local optimal trajectory ", j+i )
-
-
-
-        nextStateOptimal = localOptimalTrajectory[1]
-        currentState = realPath[-1][0].get_state()
+        endTime = time.time()
+        print(f"Step took {endTime - startTime:.3f} seconds")
+        optimizationTimes.append(endTime - startTime)
+        obstacleConsidered.append(len(obstacles))
 
         state = simulator.simulate(localOptimalTrajectory[0].get_state(), localOptimalTrajectory[0].u, stepDt)[:, -1]
-
         state = OptimizationState(
             x = state[0:3],
             v = state[3:6],
@@ -792,6 +677,7 @@ def main():
         realPath.append((state, stepDt))
         collisions = []
         indexes = None
+
         for j, (p, _) in enumerate(realPath):
             x = p.x
             R = trf.Rotation.from_quat(p.q)
@@ -826,10 +712,15 @@ def main():
                 i
             )
 
-
         if np.linalg.norm(state.x - goalNode.x) < 0.1:
             atGoalNode = True
 
+    plt.boxplot(optimizationTimes)
+    plt.title("Optimization Times")
+    plt.xlabel("Optimization Iteration")
+    plt.ylabel("Time (seconds)")
+    plt.grid()
+    plt.show()
 
     drawLocalOptimalTrajectory(
         environment,
