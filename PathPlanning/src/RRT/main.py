@@ -171,17 +171,14 @@ def main():
         
 
 
-        
-
-
-
     startTime = time.time()
     payloadTranslation = np.array([-0.45, 0.0, 0.0])
     payloadSize = np.array([0.45, 0.45, 0.12])
     usePayload = False
-    planner = rrtcxx.RRTPlanner3D(env.triangleVertex, env.triangleIndex, payloadTranslation, payloadSize, usePayload, 100000, 0.2, 0.1, 0.0, 3.0,
+    planner = rrtcxx.RRTPlanner3D(env.triangleVertex, env.triangleIndex, payloadTranslation, payloadSize, usePayload, 100000, 0.1, 0.05, 0.0, 3.0,
                                    3.0, 6.0, 0.0, 7.0)
     path = planner.plan(start, goal)
+    prunedPath = planner.prunePath(path)
     endTime = time.time()
     print(f"RRTCXX Planning time: {endTime - startTime:.2f} seconds")
     pv_ = pv.Plotter()
@@ -196,18 +193,33 @@ def main():
         q = p.q
 
         T = np.eye(4)
-        T[:3, :3] = sp.spatial.transform.Rotation.from_quat(q, scalar_first=True).as_matrix()
+        T[:3, :3] = sp.spatial.transform.Rotation.from_quat(q).as_matrix()
         T[:3, 3] = x
         cube = robotMesh.copy()
         cube.transform(T)
         pv_.add_mesh(cube, color='blue', show_edges=True)
+    
+    for p in prunedPath:
+        x = p.position
+        q = p.q
+
+        T = np.eye(4)
+        T[:3, :3] = sp.spatial.transform.Rotation.from_quat(q).as_matrix()
+        T[:3, 3] = x
+        cube = robotMesh.copy()
+        cube.transform(T)
+        pv_.add_mesh(cube, color='red', show_edges=True)
+    
+    print(f"Path length: {len(path)}")
+    print(f"Pruned path length: {len(prunedPath)}")
+    print(f"Path pruning ratio: {len(path) / len(prunedPath):.2f}")
         
 
     pv_.show()
 
 
-    positions = np.array([p.position for p in path])
-    orientations = np.array([p.q for p in path])
+    positions = np.array([p.position for p in prunedPath])
+    orientations = np.array([p.q for p in prunedPath])
 
     np.savez(os.path.join(os.path.dirname(__file__), "path.npz"), positions=positions, orientations=orientations)
 
