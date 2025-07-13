@@ -110,14 +110,14 @@ class LocalOptimalPlanner:
         costTime = time.time() 
         cost = 0
         #cost += 10000 * ca.fabs(_dt - dt)
-        for i in range(1, N):
-            cost += (u[:, i] - initialPath[i].u).T @ 0.1 @ (u[:, i] - initialPath[i].u)
+        #for i in range(1, N):
+        #    cost += (u[:, i] - initialPath[i].u).T @ 0.1 @ (u[:, i] - initialPath[i].u)
         
         for i in range(1, N):
             cost += ca.sumsqr(x[0:3, i] - initialPath[i].x)
             cost += 10 * (1 - ca.dot(x[6:10, i], initialPath[i].q)**2)
-            cost += 0.001 * ca.sumsqr(x[3:6, i] - initialPath[i].v)
-            cost += 0.001 * ca.sumsqr(x[10:13, i] - initialPath[i].w)
+            #cost += 0.001 * ca.sumsqr(x[3:6, i] - initialPath[i].v)
+            #cost += 0.001 * ca.sumsqr(x[10:13, i] - initialPath[i].w)
         
         #print(f"Setup cost time: {time.time() - costTime:.4f} seconds")
         timeStart = time.time()
