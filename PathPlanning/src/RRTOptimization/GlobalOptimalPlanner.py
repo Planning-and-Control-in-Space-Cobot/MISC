@@ -87,7 +87,7 @@ class GlobalOptimalPlanner:
                     )
                 
                 opti.subject_to(
-                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 16*maxDistance**2
+                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
                 )
     
         opti.subject_to(opti.bounded(-3, u, 3))
@@ -106,9 +106,13 @@ class GlobalOptimalPlanner:
             "ipopt", 
             {
                 "print_time" : False,
-                #"expand": True,
+                "expand": True,
             }, 
             {
+                "tol": 1e-6,                        # Overall convergence tolerance
+                "constr_viol_tol": 1e-6,           # Constraint violation tolerance
+                "acceptable_tol": 1e-6,            # Acceptable overall tolerance
+                "acceptable_constr_viol_tol": 1e-6,# Acceptable constraint violation
                 "max_iter" : 100,
                 "print_level" : 0,
                 "linear_solver" : "ma97",

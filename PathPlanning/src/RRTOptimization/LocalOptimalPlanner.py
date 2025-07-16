@@ -75,7 +75,7 @@ class LocalOptimalPlanner:
         dynamicTime = time.time()
         for i in range(N - 1):
             opti.subject_to(x[:, i+1] == self.robot.f(x[:, i], u[:, i], dt))
-        #print(f"Setup dynamics constraints time: {time.time() - dynamicTime:.4f} seconds")
+        print(f"Setup dynamics constraints time: {time.time() - dynamicTime:.4f} seconds")
 
         obstacleAvoidanceTime = time.time() 
         totalObstacles = 0
@@ -94,10 +94,10 @@ class LocalOptimalPlanner:
                         obs.normal.reshape((1, 3)) @ obs.closestPointObstacle + obs.safetyMargin
                     )
                 
-                opti.subject_to(
-                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
-                )
-        #print(f"Setup obstacle avoidance constraints time: {time.time() - obstacleAvoidanceTime:.4f} seconds with {totalObstacles} obstacles")
+                #opti.subject_to(
+                #    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
+                #)
+        print(f"Setup obstacle avoidance constraints time: {time.time() - obstacleAvoidanceTime:.4f} seconds with {totalObstacles} obstacles")
 
         boundariesTime = time.time()
         opti.subject_to(opti.bounded(-3, u, 3))
@@ -105,7 +105,7 @@ class LocalOptimalPlanner:
         
         #for i in range(1, N):
         #    opti.subject_to(ca.sumsqr(x[6:10]) == 1)
-        #print(f"Setup boundaries constraints time: {time.time() - boundariesTime:.4f} seconds")
+        print(f"Setup boundaries constraints time: {time.time() - boundariesTime:.4f} seconds")
 
         costTime = time.time() 
         cost = 0
@@ -113,9 +113,9 @@ class LocalOptimalPlanner:
         #for i in range(1, N):
         #    cost += (u[:, i] - initialPath[i].u).T @ 0.1 @ (u[:, i] - initialPath[i].u)
         
-        for i in range(1, N):
+        for i in range(N):
             cost += ca.sumsqr(x[0:3, i] - initialPath[i].x)
-            cost += 10 * (1 - ca.dot(x[6:10, i], initialPath[i].q)**2)
+            cost += 1 - ca.dot(x[6:10, i], initialPath[i].q)**2
             #cost += 0.001 * ca.sumsqr(x[3:6, i] - initialPath[i].v)
             #cost += 0.001 * ca.sumsqr(x[10:13, i] - initialPath[i].w)
         
@@ -131,6 +131,10 @@ class LocalOptimalPlanner:
             {
                 "max_iter" : 100,
                 "print_level" : 0, 
+                "tol": 1e-6,                        # Overall convergence tolerance
+                "constr_viol_tol": 1e-6,           # Constraint violation tolerance
+                "acceptable_tol": 1e-6,            # Acceptable overall tolerance
+                "acceptable_constr_viol_tol": 1e-6,# Acceptable constraint violation
                 # We are using wall time since we want to limit the total time 
                 # of optimization and not only the time in cpu
                 "max_wall_time" : 0.5, 
@@ -142,8 +146,6 @@ class LocalOptimalPlanner:
             }
         )
         endTime = time.time()
-        #print(f"Setup time: {endTime - timestart:.4f} seconds")
-
 
         for i in range(N):
             opti.set_initial(x[:, i], initialPath[i].get_state())
