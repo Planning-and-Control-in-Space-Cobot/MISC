@@ -31,7 +31,7 @@ class GlobalOptimalPlanner:
             maxDistances : List[float], 
             dt : float,
             xi : OptimizationState, 
-            xf : OptimizationState
+            xf : OptimizationState, 
     ) -> Tuple[List[OptimizationState], float]:
         """Optimize the path considering the full robot planned trajectory
         

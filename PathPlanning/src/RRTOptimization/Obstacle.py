@@ -25,5 +25,5 @@ class Obstacle:
         self.normal = normal / np.linalg.norm(normal)
         self.minDistance = distance
         self.iteration = iteration
-        self.safetyMargin = safetyMargin
         self.closestPointRobot = closestPointRobot
+        self.safetyMargin = safetyMargin

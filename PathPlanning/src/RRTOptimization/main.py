@@ -36,7 +36,6 @@ finalTrajectory = None
 allOptimalPaths = []
 optimizationLock = Lock()
 
-
 def run_global_optimization(globalOptimalPlanner,
                             robot,
                             environment,
@@ -403,15 +402,8 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
 
     prevCost = 0
     prevDt = 0.2
-
-    obstacles, maxDistances, _, _ = robot.getObstacles(
-        environment, 
-        initialPath, 
-        [], 
-        [], 
-        []
-    )
-
+    
+    collisionObstacles = []
     i=0
     while True:
         print(f"{Fore.YELLOW}Global Optimization Iteration {i}{Style.RESET_ALL}")
@@ -425,7 +417,6 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
             allOptimalPaths = _allOptimalPaths
             break
             
-        
         if currentPosition is None:
             print(Fore.YELLOW + f"Waiting for the current position to be set" + Style.RESET_ALL)
             time.sleep(0.1)
@@ -436,16 +427,28 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
             key=lambda j: np.linalg.norm(initialPath[j].x - _currentPosition.x)
         )
 
-        distanceCurrentStart = np.linalg.norm(
-            initialPath[startPointIndex].x - _currentPosition.x
-        )
+        _initialPath = [_currentPosition] + initialPath[startPointIndex + 1:]
+        obstacles, maxDistances = robot.getObstacles(environment, _initialPath)
 
-        if distanceCurrentStart < 0.1:
-            _initialPath = initialPath[startPointIndex:]
-        else :
-            _initialPath = [currentPosition] + initialPath[startPointIndex:]
+        newCollisionsObstacles = []
+        for j, p in enumerate(initialPath):
+            if p not in _initialPath:
+                continue
+            indexNewPath = _initialPath.index(p)
+            for k, col in collisionObstacles:
+                if col.iteration == j:
+                    newCollisionsObstacles.append(
+                        Obstacle(
+                            closestPointObstacle=col.closestPointObstacle,
+                            closestPointRobot=col.closestPointRobot,
+                            normal=col.normal,
+                            iteration=indexNewPath,
+                        )
+                    )
+                    break
+        obstacles += newCollisionsObstacles
 
-        print(Fore.YELLOW +  f"Length of the path is {len(_initialPath)}" + Style.RESET_ALL)
+        print(Fore.YELLOW +  f"Length of the path is {len(_initialPath)} and starting point is {startPointIndex}" + Style.RESET_ALL)
 
         timeStart = time.time()
         try:
@@ -455,8 +458,9 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
                 maxDistances, 
                 prevDt, 
                 _currentPosition, 
-                _initialPath[-1]
+                _initialPath[-1], 
             )
+
         except Exception as e:
             print(Fore.RED + f"Error during global optimization: {e}" + Style.RESET_ALL)
             continue
@@ -464,17 +468,11 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
         timeEnd = time.time()
         print(Fore.YELLOW + f"Global optimization took {timeEnd - timeStart:.3f} seconds" + Style.RESET_ALL)
 
-        obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
-            environment, 
-            _optimalTrajectory, 
-            initialPath, 
-            obstacles, 
-            maxDistances    
-        )
+        collisionFree = robot.collisionFree(_optimalTrajectory, environment)
 
         _allOptimalPaths.append((_optimalTrajectory, _newDt, _cost))
 
-        if not anyCollision:
+        if collisionFree:
             print(Fore.CYAN + "No Collision found, updating global variables." + Style.RESET_ALL)
             with optimizationLock:
                 currentTimeStep = _newDt
@@ -485,11 +483,15 @@ def globalOptimization(globalOptimizer : GlobalOptimalPlanner,
             
             if costVariation < 0.01 and timeVariation < 0.01:
                 print(Fore.GREEN + "Global optimization converged." + Style.RESET_ALL)
+                with optimizationLock:
+                    allOptimalPaths = _allOptimalPaths
                 break
             else:
                 initialPath = _optimalTrajectory
                 prevCost = _cost
                 prevDt = _newDt
+        else:
+            pass
 
 def localOptimization(
         localOptimizer : LocalOptimalPlanner, 
@@ -532,7 +534,7 @@ def localOptimization(
     with optimizationLock:
         _currentPosition = currentPosition
 
-    realPath = [(_currentPosition, -1)]
+    realPath = [(_currentPosition, -1, None)]
 
     i = 0 
     while True:
@@ -574,12 +576,9 @@ def localOptimization(
         
 
 
-        obstacles, maxDistances, _, _ = robot.getObstacles(
+        obstacles, maxDistances = robot.getObstacles(
             environment,
             initialLocalTrajectory, 
-            [], 
-            [], 
-            []
         )
 
         print(Fore.BLUE + f"Len Initial Trajectory: {len(initialTrajectory)} num Obstacles {len(obstacles)} local horizon {localHorizon}" + Style.RESET_ALL)
@@ -596,7 +595,7 @@ def localOptimization(
         )
 
         endTime = time.time()
-        print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds" + Style.RESET_ALL)
+        print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds with simulated Time Step of {_currentTimeStep}" + Style.RESET_ALL)
 
 
         state = simulator.simulate(
@@ -612,7 +611,7 @@ def localOptimization(
             w=state[10:13]
         )
 
-        realPath.append((state, _currentTimeStep))
+        realPath.append((state, _currentTimeStep, _currentTrajectory))
 
         if np.linalg.norm((state.x - _currentTrajectory[-1].x)) < 0.1:
             print(Fore.GREEN + "Reached the goal node." + Style.RESET_ALL)
@@ -620,16 +619,11 @@ def localOptimization(
             atEnd = True
             break
 
-
-        obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
-            environment, 
+        collisionFree = robot.collisionFree(
             [rp[0] for rp in realPath],
-            [],
-            [],
-            []
+            environment,
         )
-
-        print(Fore.BLUE + f"Collision Found in Real Path: {anyCollision}" + Style.RESET_ALL)
+        print(Fore.BLUE + f"Collision Found in Real Path: {collisionFree}" + Style.RESET_ALL)
 
 
         with optimizationLock:
@@ -643,7 +637,6 @@ def localOptimization(
             #    realPath
             #)
             currentPosition = state
-
 
 def drawLOTWithGOTAndFCP(
         environment, 
@@ -711,7 +704,6 @@ def drawLOTWithGOTAndFCP(
     pv_.add_axes()
     pv_.show_grid()
     pv_.show()
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -821,17 +813,6 @@ def main():
 
     dt = 0.2
 
-    obstacles, maxDistances, _,  _  = robot.getObstacles(
-        environment,
-        optimizationPath, 
-        [], 
-        [], 
-        []
-    )
-
-    print(f"Number of obstacles detected: {len(obstacles)}")
-    print(f"Number of max distances: {len(maxDistances)}")
-
     numSuccessfulOptimizationsRequired = 10
     optimizationHorizon = 10
     lookAhead = 10
@@ -896,6 +877,21 @@ def main():
             "optimalPaths" : allOptimalPaths,
         }, f)
 
+    pv_ = pv.Plotter()
+    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+    pv_.add_axes()
+    pv_.show_grid()
+    for p, _, _ in finalTrajectory:
+        x = p.x
+        R = trf.Rotation.from_quat(p.q)
+        robotMesh = robot.getPVMesh(x, R)
+        pv_.add_mesh(
+            robotMesh,
+            color="blue",
+            show_edges=True,
+            opacity=0.5,
+        )
+    pv_.show()
     return
 
 
@@ -1240,7 +1236,6 @@ def main():
         pickle.dump(optimizedPaths, f)
     
     print(f"Optimized path saved to {os.path.join(script_dir, 'optimizedPath.pkl')}")
-
 
 if __name__ == "__main__":
     main()

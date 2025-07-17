@@ -18,6 +18,7 @@ from typing_extensions import override
 
 from RRTOptimization.Obstacle import Obstacle
 from Environment import EnvironmentHandler
+from RRTOptimization.OptimizationState import OptimizationState
 
 
 class Model:
@@ -303,9 +304,9 @@ class Robot(Model):
         ]
 
     def collisionFree(self,
-                      x : np.ndarray, 
-                      R : trf.Rotation,
-                      environment : EnvironmentHandler) -> bool:
+                      path : List[OptimizationState],
+                      environment: EnvironmentHandler,
+                      ) -> bool:
         """Function to check if the robot is in a collision free state in the environment
         Parameters
             x (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
@@ -317,67 +318,36 @@ class Robot(Model):
         """
         if not isinstance(environment, EnvironmentHandler):
             raise TypeError("Environment must be an instance of EnvironmentHandler")
+
+        for p in path:
+            collision, _, _, _, _ = environment.collide(
+                self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
+            )
+            if collision:
+                return False
         
-        collision, _, _, _, _ = environment.collide(
-            self.fcl_obj, x, R
-        )
-        return not collision
-
-
-    def getObstaclesSingle(
-            self: _T,
-            environment: EnvironmentHandler,
-            cPos : np.ndarray,
-            cR : trf.Rotation,
-    ) -> List[Obstacle]:
-        if not isinstance(environment, EnvironmentHandler):
-            raise TypeError("Environment must be an instance of EnvironmentHandler")
-
-        obstacles = []
-        for v in self.getVertices():
-            point = environment.buildSinglePoint()
-            minDistance, pt1, pt2, _ = environment.distance(
-                point, cR.as_matrix() @ v + cPos, cR
-            )
-            obstacles.append(
-                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, -1, pt1)
-            )
-
-        filteredObstacles = []
-        for obs in obstacles:
-            newObstacle = True
-            for fobs in filteredObstacles:
-                if np.allclose(obs.normal, fobs.normal, 1e-1):
-                    newObstacle = False
-            if newObstacle:
-                filteredObstacles.append(obs)
-                
-        return filteredObstacles
+        return True
 
     def getObstacles(
         self,
         environment: EnvironmentHandler,
         path, 
-        previousPath,
-        previousObstacles, 
-        prevMaxDistances
-    ) -> Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
-        """Function to compute the collision planes of the robot with the environment
+    ) -> Tuple[List[Obstacle], List[float]]:
+        """Function to compute the obstacles for a collision free path
 
         Parameters
-            environment (EnvironmentHandler): Environment handler object that contains the environment information
-            pos (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
-            R (trf.Rotation): quaternion of the robot in the environment, this is the rotation from the center of the robot to the closest point in the robot
-            iteration (int) : iteration on the path that the obstacles returns should be considered
-            count (int): number of points to sample on the surface of the robot mesh, default is 100
+            environment (EnvironmentHandler): Environment handler object 
+            path (List[OptimizationState]) : List of states representing the 
+                trajectory
+
 
         Returns:
-            Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
-                - List of obstacles detected in the environment, if a collision was detected in the current path, it is the previous obstacles and the collisions planes
-                - Maximum distance of the closest obstacles detected in the environment by each face 
-                - Boolean indicating if any collision was detected
-                - List of the collision planes if any exist
-
+            Tuple[List[Obstacle], List[float]]:
+                - List of obstacles detected in the environment, if a collision 
+                    was detected in the current path, it is the previous 
+                    obstacles and the collisions planes
+                - Maximum distance of the closest obstacles detected in the 
+                environment by each face 
         """
         anyCollision = False
         obstacles, maxDistance = [], []
@@ -385,10 +355,6 @@ class Robot(Model):
             collision, _, _, _, _ = environment.collide(
                 self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
             )
-
-            if collision:
-                anyCollision = True
-                break
             
             _minDistance = []
             _obstacles = []
@@ -414,20 +380,40 @@ class Robot(Model):
             
             maxDistance.append(max(_minDistance))
 
-        collisionObstacles = []
-        if anyCollision:
-            for i, p in enumerate(path):
-                collision, depth, pt1, pt2, normal = environment.collide(
-                    self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
-                )
+        return obstacles, maxDistance
 
-                if collision:
-                    collisionObstacles.append(
-                        Obstacle(pt2, -normal, depth, i, pt1)
-                ) 
-            previousObstacles.extend(collisionObstacles)
-            return previousObstacles, prevMaxDistances, anyCollision,  collisionObstacles
-        return obstacles, maxDistance, anyCollision, collisionObstacles
+    def getCollision(self,
+                     environment: EnvironmentHandler,
+                     path : List[OptimizationState]) -> List[Obstacle]:
+        """Function to compute the collision of the robot with the environment.
+        
+        Parameters
+            environment (EnvironmentHandler): Environment handler object that 
+                contains the environment information
+            path (List[OptimizationState]): List of states representing the 
+                trajectory
+        Returns:
+            List [Obstacle] : List of all the detected collisions in the 
+                environment.
+        """
+        if not isinstance(environment, EnvironmentHandler):
+            raise TypeError("Environment must be an instance of EnvironmentHandler")
+        
+        collisions = []
+        for p in path:
+            x = p.x
+            R = trf.Rotation.from_quat(p.q)
+            collision, depth, pt1, pt2, normal = environment.collide(
+                self.fcl_obj, x, R
+            )
+            if collision:
+                collisions.append(
+                    Obstacle(pt2,-normal, depth, p.i, pt1
+                    )
+                )
+        return collisions
+
+
 
     def drawRobotAndFaces(self : _T):
         """Function to draw the robot and its faces in a pyvista plotter, this is used for debugging purposes"""
@@ -507,7 +493,6 @@ class Robot(Model):
                 [-0.225, 0.225, 0.06],
             ]
         )
-
 
     def f(self, state: ca.MX, u: ca.MX, dt: ca.MX) -> ca.MX:
         """
