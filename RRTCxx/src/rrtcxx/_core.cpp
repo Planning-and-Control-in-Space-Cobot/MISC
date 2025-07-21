@@ -162,11 +162,6 @@ public:
                         auto pos = node.position;
                         auto quat = node.orientation;
                         auto collision = isCollisionFree(node);
-
-                        std::cout << "Position: " << pos.transpose()
-                                    << ", Orientation: " << quat.coeffs().transpose()
-                                    << ", Collision Free: " << collision << std::endl;
-
                     }
 
 
@@ -182,6 +177,47 @@ public:
         this->treeA = treeA;
         this->treeB = treeB;
         return {};
+    }
+
+    std::vector<State> prunePath (const std::vector<State>& path) {
+        if (path.size() < 3) return path; // No pruning possible
+
+        std::vector<State> prunedPath;
+        prunedPath.push_back(path.front());
+        
+        size_t pathSize = path.size();
+        size_t currentPathIndex = 0;
+        while (currentPathIndex < pathSize - 1) {
+            size_t nextPathIndex = pathSize - 1;
+
+            while (nextPathIndex > currentPathIndex + 1) {
+                if (isMotionValid(path[currentPathIndex], path[nextPathIndex])) {
+                    break; 
+                }
+                --nextPathIndex; 
+            }
+            
+            prunedPath.push_back(path[nextPathIndex]);
+            currentPathIndex = nextPathIndex;
+        }
+
+        // Now interpolate between pruned waypoints
+        std::vector<State> interpolatedPath;
+        for (size_t i = 0; i < prunedPath.size() - 1; ++i) {
+            const State& from = prunedPath[i];
+            const State& to = prunedPath[i + 1];
+            double dist = from.distance(to);
+            int steps = std::max(1, int(dist / stepSize));
+
+            for (int j = 0; j < steps; ++j) {
+                double alpha = double(j) / steps;
+                interpolatedPath.push_back(from.interpolate(to, alpha));
+            }
+        }
+        // Add the final goal state
+        interpolatedPath.push_back(prunedPath.back());
+
+        return interpolatedPath;
     }
 
 private:
@@ -201,7 +237,6 @@ private:
     double minX, maxX, minY, maxY, minZ, maxZ;
 
     void setupEnvironment() {
-
         
         envModel = std::make_shared<coal::BVHModel<coal::OBBRSS>>();
         envModel->beginModel(vertexLocation.rows(), triangleIndices.rows());
@@ -324,10 +359,10 @@ PYBIND11_MODULE(_core, m) {
         .def("interpolate", &State::interpolate)
         .def_property_readonly("q", [](const State& self) {
             return Eigen::Vector4d(
-                self.orientation.w(),
                 self.orientation.x(),
                 self.orientation.y(),
-                self.orientation.z()
+                self.orientation.z(),
+                self.orientation.w()
             );
         });
 
@@ -340,7 +375,8 @@ PYBIND11_MODULE(_core, m) {
         .def(py::init<Eigen::MatrixXd, Eigen::MatrixXi, Eigen::Vector3d, Eigen::Vector3d, bool, int, double, double, double, double, double, double, double, double>())
         .def("plan", &RRTPlanner3D::plan)
         .def("getTreeA", &RRTPlanner3D::getTreeA)
-        .def("getTreeB", &RRTPlanner3D::getTreeB);
+        .def("getTreeB", &RRTPlanner3D::getTreeB)
+        .def("prunePath", &RRTPlanner3D::prunePath);
 
     
 

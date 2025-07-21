@@ -16,8 +16,9 @@ from typing import TypeVar, List, Optional, Tuple
 _T = TypeVar("_T", bound="Model")
 from typing_extensions import override
 
-from Obstacle import Obstacle
+from RRTOptimization.Obstacle import Obstacle
 from Environment import EnvironmentHandler
+from RRTOptimization.OptimizationState import OptimizationState
 
 
 class Model:
@@ -153,10 +154,6 @@ class face():
         if np.dot(normal, R.apply(self.normal)) > -0.2:
             # If the normal of the face is not facing the obstacle, we ignore it
             return None
-        print(
-            f"iter {iter} Face normal: {R.apply(self.normal)}, Obstacle normal: {normal}, dot: {np.dot(normal, R.apply(self.normal))} = center offset {self.centerOffset}"
-        )
-
         """
         pv_ = pv.Plotter()
         pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
@@ -306,60 +303,51 @@ class Robot(Model):
             ),
         ]
 
-    def getObstaclesSingle(
-            self: _T,
-            environment: EnvironmentHandler,
-            cPos : np.ndarray,
-            cR : trf.Rotation,
-    ) -> List[Obstacle]:
+    def collisionFree(self,
+                      path : List[OptimizationState],
+                      environment: EnvironmentHandler,
+                      ) -> bool:
+        """Function to check if the robot is in a collision free state in the environment
+        Parameters
+            x (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
+            R (trf.Rotation): quaternion of the robot in the environment, this is the rotation from the center of the robot to the closest point in the robot
+            environment (EnvironmentHandler): Environment handler object that contains the environment information
+        
+        Returns:
+            bool: True if the robot is in a collision free state, False otherwise
+        """
         if not isinstance(environment, EnvironmentHandler):
             raise TypeError("Environment must be an instance of EnvironmentHandler")
 
-        obstacles = []
-        for v in self.getVertices():
-            point = environment.buildSinglePoint()
-            minDistance, pt1, pt2, _ = environment.distance(
-                point, cR.as_matrix() @ v + cPos, cR
+        for p in path:
+            collision, _, _, _, _ = environment.collide(
+                self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
             )
-            obstacles.append(
-                Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), minDistance, -1, pt1)
-            )
-
-        filteredObstacles = []
-        for obs in obstacles:
-            newObstacle = True
-            for fobs in filteredObstacles:
-                if np.allclose(obs.normal, fobs.normal, 1e-1):
-                    newObstacle = False
-            if newObstacle:
-                filteredObstacles.append(obs)
-                
-        return filteredObstacles
+            if collision:
+                return False
+        
+        return True
 
     def getObstacles(
         self,
         environment: EnvironmentHandler,
         path, 
-        previousPath,
-        previousObstacles, 
-        prevMaxDistances
-    ) -> Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
-        """Function to compute the collision planes of the robot with the environment
+    ) -> Tuple[List[Obstacle], List[float]]:
+        """Function to compute the obstacles for a collision free path
 
         Parameters
-            environment (EnvironmentHandler): Environment handler object that contains the environment information
-            pos (np.ndarray): position of the robot in the environment, this is the translation from the center of the robot to the closest point in the robot
-            R (trf.Rotation): quaternion of the robot in the environment, this is the rotation from the center of the robot to the closest point in the robot
-            iteration (int) : iteration on the path that the obstacles returns should be considered
-            count (int): number of points to sample on the surface of the robot mesh, default is 100
+            environment (EnvironmentHandler): Environment handler object 
+            path (List[OptimizationState]) : List of states representing the 
+                trajectory
+
 
         Returns:
-            Tuple[List[Obstacle], List[float], bool, List[Obstacle]]:
-                - List of obstacles detected in the environment, if a collision was detected in the current path, it is the previous obstacles and the collisions planes
-                - Maximum distance of the closest obstacles detected in the environment by each face 
-                - Boolean indicating if any collision was detected
-                - List of the collision planes if any exist
-
+            Tuple[List[Obstacle], List[float]]:
+                - List of obstacles detected in the environment, if a collision 
+                    was detected in the current path, it is the previous 
+                    obstacles and the collisions planes
+                - Maximum distance of the closest obstacles detected in the 
+                environment by each face 
         """
         anyCollision = False
         obstacles, maxDistance = [], []
@@ -367,10 +355,6 @@ class Robot(Model):
             collision, _, _, _, _ = environment.collide(
                 self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
             )
-
-            if collision:
-                anyCollision = True
-                break
             
             _minDistance = []
             _obstacles = []
@@ -386,24 +370,50 @@ class Robot(Model):
                         _obstacles.append(obs)
                         obstacles.append(obs)
             if _minDistance == []:
-                return None, None, None, None
+                md, pt1, pt2, _ = environment.distance(
+                    self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
+                )
+                _minDistance.append(md)
+                obstacles.append(
+                    Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), md, i, pt1)
+                )
             
             maxDistance.append(max(_minDistance))
 
-        collisionObstacles = []
-        if anyCollision:
-            for i, p in enumerate(path):
-                collision, depth, pt1, pt2, normal = environment.collide(
-                    self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
-                )
+        return obstacles, maxDistance
 
-                if collision:
-                    collisionObstacles.append(
-                        Obstacle(pt2, -normal, depth, i, pt1)
-                ) 
-            previousObstacles.extend(collisionObstacles)
-            return previousObstacles, prevMaxDistances, anyCollision,  collisionObstacles
-        return obstacles, maxDistance, anyCollision, collisionObstacles
+    def getCollision(self,
+                     environment: EnvironmentHandler,
+                     path : List[OptimizationState]) -> List[Obstacle]:
+        """Function to compute the collision of the robot with the environment.
+        
+        Parameters
+            environment (EnvironmentHandler): Environment handler object that 
+                contains the environment information
+            path (List[OptimizationState]): List of states representing the 
+                trajectory
+        Returns:
+            List [Obstacle] : List of all the detected collisions in the 
+                environment.
+        """
+        if not isinstance(environment, EnvironmentHandler):
+            raise TypeError("Environment must be an instance of EnvironmentHandler")
+        
+        collisions = []
+        for p in path:
+            x = p.x
+            R = trf.Rotation.from_quat(p.q)
+            collision, depth, pt1, pt2, normal = environment.collide(
+                self.fcl_obj, x, R
+            )
+            if collision:
+                collisions.append(
+                    Obstacle(pt2,-normal, depth, p.i, pt1
+                    )
+                )
+        return collisions
+
+
 
     def drawRobotAndFaces(self : _T):
         """Function to draw the robot and its faces in a pyvista plotter, this is used for debugging purposes"""
@@ -484,144 +494,107 @@ class Robot(Model):
             ]
         )
 
-    @override
-    def f(self, state, u, dt):
-        '''
-        Computes the next state of the robot given the current state.
-
-        Taking into account the robot's dynamics, the current state, control 
-        inputs, and the time step, this function computes the next state of the 
-        robot. This function works with casadi variables and not numpy arrays, 
-        since this is to be used inside an optimization problem and not for a
-        simulation directly.
+    def f(self, state: ca.MX, u: ca.MX, dt: ca.MX) -> ca.MX:
+        """
+        Computes the next state of the robot using RK4 integration.
 
         Parameters:
-            state (ca.MX): Current state of the robot, which includes position, 
-                velocity, quaternion and angular velocity. 13x1 vector.
-            u (ca.MX): Control inputs for the robot. 6x1 vector.
+            state (ca.MX): Current state [13x1] (position, velocity, quaternion, angular velocity)
+            u (ca.MX): Control input [6x1]
+            dt (ca.MX): Time step
+
+        Returns:
+            ca.MX: Next state [13x1] after applying RK4 integration
+        """
+        def f_dot(x, u):
+            # Unpack state
+            p = x[0:3]       # position
+            v = x[3:6]       # velocity
+            q = x[6:10]      # quaternion (x, y, z, w)
+            w = x[10:13]     # angular velocity
+
+            # Compute force and moment
+            F = self.A[0:3, :] @ u  # force in body frame
+            M = self.A[3:6, :] @ u  # moment in body frame
+
+            # Convert quaternion to rotation matrix
+            qx, qy, qz, qw = q[0], q[1], q[2], q[3]
+            R = ca.vertcat(
+                ca.horzcat(1 - 2*(qy**2 + qz**2),     2*(qx*qy - qz*qw),     2*(qx*qz + qy*qw)),
+                ca.horzcat(    2*(qx*qy + qz*qw), 1 - 2*(qx**2 + qz**2),     2*(qy*qz - qx*qw)),
+                ca.horzcat(    2*(qx*qz - qy*qw),     2*(qy*qz + qx*qw), 1 - 2*(qx**2 + qy**2)),
+            )
+
+            # Quaternion kinematic matrix
+            Q = ca.vertcat(
+                ca.horzcat( qw, -qz,  qy),
+                ca.horzcat( qz,  qw, -qx),
+                ca.horzcat(-qy,  qx,  qw),
+                ca.horzcat(-qx, -qy, -qz)
+            )
+
+            # Compute derivatives
+            p_dot = v
+            v_dot = (1 / self.m) * R.T @ F
+            q_dot = 0.5 * Q @ w
+            w_dot = np.linalg.inv(self.J) @ (M - ca.cross(w, self.J @ w))
+
+            return ca.vertcat(p_dot, v_dot, q_dot, w_dot)
+
+        # RK4 integration
+        k1 = f_dot(state, u)
+        k2 = f_dot(state + 0.5 * dt * k1, u)
+        k3 = f_dot(state + 0.5 * dt * k2, u)
+        k4 = f_dot(state + dt * k3, u)
+
+        next_state = state + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+        return next_state
+    
+    def numericalF (self, state, u, dt):
+        """Numerical approximation of the robot dynamics using finite differences.
+
+        This function is used to compute the next state of the robot given the
+        current state, control inputs, and time step using a numerical
+        approximation method.
+
+        Parameters:
+            state (np.ndarray): Current state of the robot.
+            u (np.ndarray): Control inputs for the robot.
             dt (float): Time step for the state update.
 
         Returns:
-            ca.MX: Next state of the robot, which includes position, velocity,
-                quaternion and angular velocity. 13x1 vector.
-        '''        
+            np.ndarray: Next state of the robot.
+        """
         def unflat(state, u):
-            '''
-            Unflattens the state and control inputs vectors
-
-            Unflattens the state vector and the control input vector into the 
-            respective components: position, velocity, quaternion, angular
-            velocity, force, and moment.
-
-
-            Parameters:
-                state (ca.MX): Current state of the robot, which includes
-                    position, velocity, quaternion and angular velocity. 13x1 vector.
-                u (ca.MX): Control inputs for the robot. 6x1 vector.
-            
-            Returns:
-                tuple: A tuple containing the position (x), velocity (v),
-                quaternion (q), angular velocity (w), force (F), and moment (M)
-                of the robot.
-            '''
             x = state[0:3]
             v = state[3:6]
             q = state[6:10]
             w = state[10:13]
             return x, v, q, w, self.A[0:3, :] @ u, self.A[3:6, :] @ u
-
+    
         def flat(x, v, q, w):
-            '''
-            Flattens the state variables into a single vector
-
-            Flattens the position, velocity, quaternion, and angular velocity
-            vectors into a single vector representing the state of the robot.
-
-            Parameters:
-                x (ca.MX): Position vector of the robot. 3x1 vector.
-                v (ca.MX): Velocity vector of the robot. 3x1 vector.
-                q (ca.MX): Quaternion representing the orientation of the robot. 4x1
-                vector.
-                w (ca.MX): Angular velocity vector of the robot. 3x1 vector
-            
-            Returns:
-                ca.MX: A single vector containing the flattened state of the robot,
-                which includes position, velocity, quaternion, and angular velocity.
-            '''
-            return ca.vertcat(x, v, q, w)
+            return np.concatenate((x, v, q, w))
 
         def quat_mul(q1, q2):
-            '''
-            Multiplies two quaternions
-
-            Multiplies two quaternions q1 and q2 using the quaternion 
-            multiplication method described into 
-            "Indirect Kalman Filter for 3D Attitude Estimation" 
-
-            Parameters:
-                q1 (ca.MX): First quaternion to be multiplied. 4x1 vector
-                q2 (ca.MX): Second quaternion to be multiplied. 4x1 vector
-
-            Returns:
-                ca.MX: The resulting quaternion after multiplying q1 and q2.
-            '''
             q1x, q1y, q1z, q1w = q1[0], q1[1], q1[2], q1[3]
             q2x, q2y, q2z, q2w = q2[0], q2[1], q2[2], q2[3]
-            q_ = ca.vertcat(
-                ca.horzcat(q1w, q1z, -q1y, q1x),
-                ca.horzcat(-q1z, q1w, q1x, q1y),
-                ca.horzcat(q1y, -q1x, q1w, q1z),
-                ca.horzcat(-q1x, -q1y, -q1z, q1w),
-            )
-            return q_ @ ca.vertcat(q2x, q2y, q2z, q2w)
-
+            return np.array([
+                q1w * q2x + q1z * q2y - q1y * q2z + q1x * q2w,
+                -q1z * q2x + q1w * q2y + q1x * q2z + q1y * q2w,
+                q1y * q2x - q1x * q2y + q1w * q2z + q1z * q2w,
+                -q1x * q2x -q1y *q2y -q1z*q2z +q1w*q2w
+            ])
+        
         def quat_int(q, w, dt):
-            '''
-            Integration of a quaternion using angular velocity
-
-            Integrates the quaternion q, considering the angular velocity and 
-            time step dt using the method described in 
-            "Indirect Kalman Filter for 3D Attitude Estimation"
-
-            Parameters:
-                q (ca.MX): Current quaternion representing the orientation of the robot. 4x
-                vector.
-                w (ca.MX): Angular velocity vector of the robot. 3x1 vector
-                dt (float): Time step for the integration.
-            
-            Returns:
-                ca.MX: The resulting quaternion after integrating the angular
-                velocity over the time step dt.
-            '''
-            w_norm = ca.sqrt(ca.mtimes(w.T, w) + 1e-3)
-            q_ = ca.vertcat(
-                w / w_norm * ca.sin(w_norm * dt / 2), ca.cos(w_norm * dt / 2)
-            )
+            w_norm = np.linalg.norm(w) + 1e-3
+            q_ = np.concatenate((w / w_norm * np.sin(w_norm * dt / 2), 
+                                 np.array([np.cos(w_norm * dt / 2)])))
             return quat_mul(q_, q)
 
         x, v, q, w, F, M = unflat(state, u)
-        R = sc.Rotation.from_quat(q)
+        R = trf.Rotation.from_quat(q)
         x_next = x + v * dt
-        v_next = v + dt * (1 / self.m) * R.as_matrix() @ F
+        v_next = v + dt * (1 / self.m) * R.as_matrix().T @ F
         q_next = quat_int(q, w, dt)
-        w_next = w + dt * ca.inv(self.J) @ (M - ca.cross(w, self.J @ w))
+        w_next = w + dt * np.linalg.inv(self.J) @ (M - np.cross(w, self.J @ w))
         return flat(x_next, v_next, q_next, w_next)
-
-    def linearizedDynamics(self, x : ca.MX, u : ca.MX, dt : ca.MX):
-        """Computes the linearized dynamics of the robot
-        
-        The dynamics of the system are non linear, and non convex, in order to
-        work with a convex optimization problem, we need to linearize the 
-        dynamics around a given point. This will then allow us to then represent 
-        the system like this x(k+1)  = A(k) (xk - x0) + B(k) (uk - u0) + x0
-
-        Parameters:
-            x (ca.MX): Current state of the robot, which includes position, 
-                velocity, quaternion and angular velocity. 13x1 vector.
-            u (ca.MX): Control inputs for the robot. 6x1 vector.
-            dt (ca.MX): Time step for the state update.
-        """
-        f = self.f(x, u, dt)
-        A = ca.jacobian(f, x)
-        B = ca.jacobian(f, u)
-        return A, B, f
