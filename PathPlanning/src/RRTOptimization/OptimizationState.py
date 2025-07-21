@@ -1,43 +1,63 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Any
 import numpy as np
 
+
+@dataclass
 class OptimizationState:
-    """Class representing a single state in the optimization problem
+    """Represents a single state in an optimization problem."""
 
-    This class encapsulates the state of a system at a given time step in the 
-    optimization problem. This class will be used as an interface for both the 
-    global optimization problem, as well as the local optimization problem.
-    """
-    def __init__(
-        self,
-        x: np.ndarray,
-        q: np.ndarray,
-        v: np.ndarray = np.zeros((3)),
-        w: np.ndarray = np.zeros((3)),
-        u: np.ndarray = np.zeros((6, )),
-        i: np.ndarray = 0,
-    ):
-        """Initialized the optimization state
+    x: np.ndarray
+    q: np.ndarray
+    v: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    w: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    u: np.ndarray = field(default_factory=lambda: np.zeros(6))
+    i: int = 0
 
-        Args:
-            x (np.ndarray): position in 3D space - (3,)
-            v (np.ndarray): velocity in 3D space - (3,)
-            q (np.ndarray): quaternion representing orientation - (4,)
-            w (np.ndarray): angular velocity in 3D space - (3,)
-            u (np.ndarray): control inputs - (6, 1)
-            i (np.ndarray): index of the state in the problem - (1,) 
-        """
-        self.x = x  # position
-        self.v = v  # velocity
-        self.q = q  # quaternion
-        self.q = self.q / np.linalg.norm(self.q)
-        self.w = w  # angular velocity
-        self.u = u.reshape((6,))  # control inputs
-        self.i = i  # index of the state in the optimization problem
+    def __post_init__(self):
+        # Ensure arrays are NumPy arrays with correct shapes
+        self.x = np.array(self.x, dtype=float)
+        self.q = np.array(self.q, dtype=float)
+        self.v = np.array(self.v, dtype=float)
+        self.w = np.array(self.w, dtype=float)
+        self.u = np.array(self.u, dtype=float)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, OptimizationState):
+            return NotImplemented
+        return (
+            np.allclose(self.x, other.x)
+            and np.allclose(self.q, other.q)
+            and np.allclose(self.v, other.v)
+            and np.allclose(self.w, other.w)
+            and np.allclose(self.u, other.u)
+            and self.i == other.i
+        )
 
     def get_state(self) -> np.ndarray:
-        """Return the state in a flatten numpy array
+        """Return the full state vector as a flat array."""
+        return np.concatenate([self.x, self.v, self.q, self.w])
 
-        Return:
-            np.ndarray: flatten state - (13,)
-        """
-        return np.hstack([self.x, self.v, self.q, self.w])
+    def to_dict(self) -> dict[str, Any]:
+        """Convert the object to a serializable dictionary."""
+        return {
+            "x": self.x.tolist(),
+            "v": self.v.tolist(),
+            "q": self.q.tolist(),
+            "w": self.w.tolist(),
+            "u": self.u.tolist(),
+            "i": self.i,
+        }
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> OptimizationState:
+        """Reconstruct an OptimizationState from a dictionary."""
+        return OptimizationState(
+            x=np.array(d["x"]),
+            v=np.array(d.get("v", [0.0, 0.0, 0.0])),
+            q=np.array(d["q"]),
+            w=np.array(d.get("w", [0.0, 0.0, 0.0])),
+            u=np.array(d.get("u", [0.0] * 6)),
+            i=int(d.get("i", 0)),
+        )
