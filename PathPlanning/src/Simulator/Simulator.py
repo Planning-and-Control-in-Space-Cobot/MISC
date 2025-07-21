@@ -23,7 +23,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from AbstractModel import Model
+from .AbstractModel import Model
 from typing import Callable
 
 class Simulator:
@@ -78,7 +78,7 @@ class Simulator:
         sol = solve_ivp(
             fun=lambda t, s: self.model.f(t, s, u),
             t_span=(0, t),
-            y0=self.state,
+            y0=state,
             method="RK45",
             t_eval=np.linspace(0, t, n_steps),
         )

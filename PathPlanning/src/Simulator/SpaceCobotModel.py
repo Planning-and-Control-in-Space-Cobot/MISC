@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.spatial.transform as trf
 
-from AbstractModel import Model
+from .AbstractModel import Model
 
 class SpaceCobot(Model):
     def __init__(self, mass=1, inertia=np.eye(3), A=np.ones((6, 6))):
@@ -33,12 +33,8 @@ class SpaceCobot(Model):
                 [w, -z, y],
                 [z, w, -x],
                 [-y, x, w],
-                [
-                    -x,
-                    -y,
-                    -z,
-                ],
-            ]
+                [-x, -y, -z],
+            ],
         )
 
     def f(self, t, state, u):
@@ -62,9 +58,7 @@ class SpaceCobot(Model):
         # Unpack control
         F = self.A[0:3, :] @ u
         M = self.A[3:6, :] @ u
-
-        print(F)
-
+        
         # Convert quaternion to rotation matrix
         R = trf.Rotation.from_quat(q).as_matrix()
 
