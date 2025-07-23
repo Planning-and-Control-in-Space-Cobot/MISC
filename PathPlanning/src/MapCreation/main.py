@@ -1,14 +1,18 @@
-"""This script created a 3D point cloud mesh from a custom defined 3D object.
-
-This mesh is also semgmented into multiple planes using RANSAC and visualized 
+"""
+This script creates a 3D point cloud mesh from a custom-defined 3D object.
+This mesh is also segmented into multiple planes using RANSAC and visualized 
 using both matplotlib and PyVista. The 3D point cloud is then saved to be used 
 as the environment in a custom path planning with collision avoidance algorithm.
+Additionally, it includes one dynamic obstacle with a motion function.
 """
+
 import os
+import sys
 import argparse
 import tempfile
 import time
-from typing import List, Tuple
+import pickle
+from typing import List, Tuple, Dict, Any
 
 import numpy as np
 import trimesh
@@ -18,6 +22,12 @@ import matplotlib.pyplot as plt
 
 from Environment import EnvironmentHandler
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
+
+from MapCreation.ObstacleMotion import CircleMotion, SineMotion
+
+# ... all functions unchanged: o3d_to_pv, strToBool, tmesh_to_o3d, sample_tmesh, etc. ...
 def o3d_to_pv(o3d_mesh: o3d.geometry.TriangleMesh) -> pv.PolyData:
     """Convert and open3d TriangleMesh to a PyVista PolyData object.
 
@@ -110,7 +120,7 @@ def sample_tmesh(
         object.
     """
     o3d_mesh = tmesh_to_o3d(tmesh)
-    return o3d_mesh.sample_points_poisson_disk(
+    return o3d_mesh.sample_points_uniformly(
         number_of_points=number_of_points
     )
 
@@ -234,38 +244,22 @@ def create_oobb_mesh_from_planes(planes, color='white') -> pv.MultiBlock:
         box_meshes.append(pv_box)
     return pv.MultiBlock(box_meshes)
 
+
+
+
+# REPLACE main()
 def main():
     """Main function to create a 3D mesh, segment planes, and visualize."""
-    parser = argparse.ArgumentParser(
-        description="Create a 3D mesh and visualize it."
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default='mesh.pcd',
-        help='Output file name for the mesh'
-    )
-    parser.add_argument(
-        '--visualize',
-        action='store_true',
-        help='Visualize the mesh using PyVista'
-    )
-    parser.add_argument(
-        '--glassMaze',
-        type=strToBool,
-        default=False,
-        help='Create a glass maze structure'
-    )
-    parser.add_argument(
-        '--pcd-size',
-        type=int,
-        default=50000,
-        help='Number of points to sample from the mesh'
-    )
+    parser = argparse.ArgumentParser(description="Create a 3D mesh and visualize it.")
+    parser.add_argument('--output', type=str, default='environment.pkl', help='Output file name for the mesh')
+    parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
+    parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
+    parser.add_argument('--pcd-size', type=int, default=500000, help='Number of points to sample from the mesh')
     args = parser.parse_args()
 
     outputFile = args.output
 
+    # Static environment creation
     if args.glassMaze:
         cube1 = trimesh.creation.box(extents=(1, 0.1, 5))
         cube2 = trimesh.creation.box(extents=(1, 0.1, 5))
@@ -281,7 +275,8 @@ def main():
         cube7 = trimesh.creation.box(extents=(0.1, 5, 1))
         cube6.apply_translation([1, 1.7, 2.7])
         cube7.apply_translation([1, 1.7, 4.1])
-        finalMesh = cube1 + cube2 + cube3 + cube4 + cube5 + cube6 + cube7
+        dynMesh = cube7
+        finalMesh = cube1 + cube2 + cube3 + cube4 + cube5 + cube6 
     else:
         cube1 = trimesh.creation.box(extents=(0.5, 10, 10))
         cube2 = trimesh.creation.box(extents=(0.75, 0.6, 0.3))
@@ -300,40 +295,61 @@ def main():
         cube6.apply_translation([-0.50, 5, 0])
         cube7 = trimesh.creation.box(extents=(1.5, 10, 0.25))
         cube7.apply_translation([-0.50, 0, -5])
-        finalMesh = cube1 + cube4 + cube5 + cube6 + cube7 + cube8
+        dynMesh = cube7
+        finalMesh = cube1 + cube4 + cube5 + cube6 +  cube8
 
+    # Sample static map
     pcd = sample_tmesh(finalMesh, number_of_points=args.pcd_size)
-    EnvironmentHandler(pcd)
 
-    print("Segmenting planes...")
-    timeStart = time.time()
-    planes, models, remaining = auto_segment_planes(pcd)
-    print(f"Plane segmentation took {time.time() - timeStart:.4f} seconds.")
-    print(f"Found {len(planes)} planes in the point cloud.")
-    
-    # Plot plane segmentation
-    plot_planes_matplotlib(planes, leftover=remaining)
+    # Create dynamic obstacle
+    #dyn_mesh = trimesh.creation.box(extents=(0.4, 0.4, 0.2))
+    dyn_pcd = sample_tmesh(dynMesh, number_of_points=50000)
+    dyn_motion = SineMotion() 
 
-    # Generate mesh from OOBBs of planes
-    print("Creating OOBB meshes...")
-    oobb_meshes = create_oobb_mesh_from_planes(planes)
+    # Save both to a single file
+    with open(outputFile, "wb") as f:
+        pickle.dump({
+            "static_pcd": np.asarray(pcd.points),
+            "dynamic_obstacles": [{
+                "points": np.asarray(dyn_pcd.points),
+                "motion": dyn_motion
+            }]
+        }, f)
 
-    # Visualize in PyVista
+    print(f"Saved environment to {outputFile}")
+
     if args.visualize:
         pv_ = pv.Plotter()
-        for box in oobb_meshes:
-            pv_.add_mesh(box, show_edges=True, opacity=0.5)
-        pv_.add_mesh(
-            pv.PolyData(np.asarray(pcd.points)),
-            color='blue',
-            point_size=2, 
-            render_points_as_spheres=True)
+        static_cloud = pv.PolyData(np.asarray(pcd.points))
+        static_actor = pv_.add_mesh(static_cloud, color='blue', point_size=2, render_points_as_spheres=True)
+
+        dyn_points = np.asarray(dyn_pcd.points)
+        dyn_cloud = pv.PolyData(dyn_points + dyn_motion.__call__(0.0))  # desloca para t=0
+        dyn_actor = pv_.add_mesh(dyn_cloud, color='red', point_size=3, render_points_as_spheres=True)
+
         pv_.add_axes()
         pv_.show_grid()
-        pv_.show()
 
-    print(f"Point cloud saved to {outputFile}")
-    o3d.io.write_point_cloud(outputFile, pcd)
+        # Animation parameters
+        n_frames = 100
+        duration = 5.0  # seconds
+        delay = duration / n_frames
+
+        def update(frame):
+            t = frame * delay
+            offset = dyn_motion.__call__(t)
+            new_points = dyn_points + offset
+            dyn_cloud.points = new_points
+            return
+
+        pv_.open_gif("dynamic_obstacle.gif")  # optional: save gif
+        for frame in range(n_frames):
+            update(frame)
+            pv_.write_frame()
+            time.sleep(delay)
+
+        pv_.close()
+        pv_.show()
 
 if __name__ == "__main__":
     main()
