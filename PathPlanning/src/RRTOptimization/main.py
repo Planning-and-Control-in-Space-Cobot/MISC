@@ -12,6 +12,8 @@ import numpy as np
 import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
+from scipy.spatial.transform import Rotation as R, Slerp 
+
 import matplotlib.pyplot as plt
 import pickle
 
@@ -209,7 +211,7 @@ def globalOptimization(stateLowerBound,
             costVariation = np.abs(prevCost - _cost) / _cost
             timeVariation = np.abs(prevDt - _newDt) / _newDt
             
-            if costVariation < 0.01 and timeVariation < 0.01:
+            if timeVariation < 0.01:
                 print(Fore.GREEN + "Global optimization converged." + Style.RESET_ALL)
                 with lock:
                     sharedData["allOptimalPaths"] = _allOptimalPaths
@@ -307,10 +309,79 @@ def localOptimization(
             key=lambda j: np.linalg.norm(_currentTrajectory[j].x - _currentPosition.x),
         )
 
-        print(Fore.BLUE + f"Start point index: {startPointIndex}" + Style.RESET_ALL)
+        distance = np.linalg.norm(_currentTrajectory[startPointIndex].x - _currentPosition.x)
 
-        initialLocalTrajectory = [_currentPosition]
-        initialLocalTrajectory.extend(_currentTrajectory[startPointIndex + 1:])
+   
+        #if distance > 0.1:
+        #    transitionTrajectory = generate_transition_trajectory(
+        #        _currentPosition, 
+        #        _currentTrajectory[startPointIndex + 5], 
+        #        N=10, 
+        #        dt=_currentTimeStep
+        #    )
+
+        #    pv_ = pv.Plotter()
+        #    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+        #    for p in transitionTrajectory:
+        #        x = p.x
+        #        R = trf.Rotation.from_quat(p.q)
+        #        robotMesh = robot.getPVMesh(x, R)
+        #        pv_.add_mesh(
+        #            robotMesh,
+        #            color="blue",
+        #            show_edges=True,
+        #            opacity=0.5,
+        #        )
+        #    pv_.add_text("Transition Trajectory", position="upper_left", color="blue")
+        #    pv_.add_axes()
+        #    pv_.show_grid()
+        #    for p in _currentTrajectory:
+        #        x = p.x
+        #        R = trf.Rotation.from_quat(p.q)
+        #        robotMesh = robot.getPVMesh(x, R)
+        #        pv_.add_mesh(
+        #            robotMesh,
+        #            color="red",
+        #            show_edges=True,
+        #            opacity=0.5,
+        #        )
+        #    pv_.add_text("Global Optimal Trajectory", position="upper_right", color="red")
+        #    x = _currentPosition.x
+        #    R = trf.Rotation.from_quat(_currentPosition.q)
+        #    robotMesh = robot.getPVMesh(x, R)
+        #    pv_.add_mesh(
+        #        robotMesh,
+        #        color="green",
+        #        show_edges=True,
+        #        opacity=0.5,
+        #    )
+        #    pv_.add_text("Current Position", position="lower_left", color="green")
+        #    pv_.add_axes()
+        #    pv_.show_grid()
+        #    pv_.add_text("Local Optimization Iteration", position="upper_left", color="blue")
+        #    pv_.show()
+
+
+
+
+        print(Fore.BLUE + f"Start point index: {startPointIndex} + {np.linalg.norm(_currentTrajectory[startPointIndex].x - _currentPosition.x)}" + Style.RESET_ALL)
+        if distance > 0.1:
+            transitionTrajectory = generate_transition_trajectory(
+                _currentPosition, 
+                _currentTrajectory[startPointIndex + 5], 
+                N=10, 
+                dt=_currentTimeStep
+            )
+            with lock:
+                sharedData["currentTrajectory"] = transitionTrajectory + _currentTrajectory[startPointIndex + 5:]
+                _currentTrajectory = sharedData["currentTrajectory"]
+
+            initialLocalTrajectory = transitionTrajectory + _currentTrajectory[startPointIndex + 5:]
+            print(Fore.YELLOW + f"initialLocal[0]: {initialLocalTrajectory[0].get_state()}" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"_currentPosition: {_currentPosition.get_state()}" + Style.RESET_ALL)
+        else:
+            initialLocalTrajectory = [_currentPosition]
+            initialLocalTrajectory.extend(_currentTrajectory[startPointIndex + 1:])
 
         if len(initialLocalTrajectory) > localHorizon:
             initialLocalTrajectory = initialLocalTrajectory[:localHorizon]
@@ -336,6 +407,10 @@ def localOptimization(
             _currentTrajectory[-1],
             0
         )
+        if _optimalTrajectory is None:
+            print(Fore.RED + f"Distance : {np.linalg.norm (_currentPosition.x - _currentTrajectory[startPointIndex].x)}" + Style.RESET_ALL)
+            print(Fore.RED + f"Distance 2 : {np.linalg.norm (_currentTrajectory[startPointIndex + 1].x - _currentTrajectory[startPointIndex + 2].x)}" + Style.RESET_ALL)
+        
 
         endTime = time.time()
         print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds with simulated Time Step of {_currentTimeStep}" + Style.RESET_ALL)
@@ -382,6 +457,62 @@ def localOptimization(
             #    _optimalTrajectory,
             #    realPath
             #)
+
+def generate_transition_trajectory(current_state, target_state, N=10, dt=0.2):
+    """
+    Generate a 10-step trajectory from current_state to target_state using cubic interpolation.
+    
+    Parameters:
+        current_state (OptimizationState): Start state (x, v, q, w)
+        target_state (OptimizationState): End state to reach at step N+5
+        N (int): Number of steps in the transition (default 10)
+        dt (float): Time step between steps
+
+    Returns:
+        List[OptimizationState]: Interpolated trajectory with zero control
+    """
+    T = dt * (N - 1)
+
+    # Position & velocity
+    x0, v0 = current_state.x, current_state.v
+    x1, v1 = target_state.x, target_state.v
+
+    a0 = x0
+    a1 = v0
+    a2 = (3 * (x1 - x0)) / T**2 - (2 * v0 + v1) / T
+    a3 = (-2 * (x1 - x0)) / T**3 + (v0 + v1) / T**2
+
+    ts = np.linspace(0, T, N)
+    positions = np.array([a0 + a1*t + a2*t**2 + a3*t**3 for t in ts])
+    velocities = np.array([a1 + 2*a2*t + 3*a3*t**2 for t in ts])
+
+    # Orientation (SLERP)
+    r_start = R.from_quat(current_state.q)
+    r_end = R.from_quat(target_state.q)
+    slerp = Slerp([0, 1], R.from_quat([current_state.q, target_state.q]))
+    rotations = slerp(np.linspace(0, 1, N))
+    quaternions = rotations.as_quat()
+
+    # Angular velocity (linear interpolation)
+    w0 = current_state.w
+    w1 = target_state.w
+    angular_velocities = np.linspace(w0, w1, N)
+
+    # Build states
+    trajectory = []
+    for i in range(N):
+        traj_state = OptimizationState(
+            x=positions[i],
+            v=velocities[i],
+            q=quaternions[i],
+            w=angular_velocities[i],
+            u=np.zeros(6),
+            i=i
+        )
+        trajectory.append(traj_state)
+
+    return trajectory
+
 
 def drawLOTWithGOTAndFCP(
 
