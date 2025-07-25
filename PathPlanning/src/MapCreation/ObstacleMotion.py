@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 class Motion(ABC):
     """Abstract base class for all motion models."""
@@ -12,6 +13,23 @@ class Motion(ABC):
     @abstractmethod
     def __repr__(self) -> str:
         pass
+
+class NoMotion(Motion):
+    """Static position, no motion."""
+    def __init__(self, position=np.zeros(3)):
+        """Initialize with a fixed position.
+        
+        Args:
+            position (array-like): Fixed position in 3D space.
+        """
+        self.position = np.array(position)
+
+    def __call__(self, t: float) -> np.ndarray:
+        """Return the fixed position regardless of time."""
+        return self.position
+
+    def __repr__(self) -> str:
+        return f"NoMotion(position={self.position.tolist()})"
 
 class CircleMotion(Motion):
     """Circular motion model"""
@@ -122,3 +140,88 @@ class SineMotion(Motion):
             str: A string describing the SineMotion instance.
         """
         return f"SineMotion(amplitude={self.amplitude}, frequency={self.frequency}, axis={self.axis.tolist()}, offset={self.offset.tolist()})"
+
+class AttitudeMotion(ABC):
+    """Abstract base class for all attitude motion models."""
+
+    @abstractmethod
+    def __call__(self, t: float) -> R:
+        """Return orientation (as a Rotation object) at time t."""
+        pass
+
+    @abstractmethod
+    def __repr__(self) -> str:
+        pass
+
+class NoAttitudeMotion(AttitudeMotion):
+    """Static orientation, no attitude change."""
+    def __init__(self, orientation: R = R.identity()):
+        self.orientation = orientation
+
+    def __call__(self, t: float) -> R:
+        return self.orientation
+
+    def __repr__(self) -> str:
+        return f"NoAttitudeMotion(orientation={self.orientation.as_quat().tolist()})"
+
+class CircleAttitudeMotion(AttitudeMotion):
+    """Attitude rotates around a fixed axis at constant angular speed."""
+    def __init__(self, speed: float = 1.0, axis=np.array([0, 0, 1])):
+        """
+        Args:
+            speed (float): Angular speed in radians per second.
+            axis (array-like): Rotation axis in 3D space.
+        """
+        self.speed = speed
+        self.axis = np.array(axis) / np.linalg.norm(axis)
+
+    def __call__(self, t: float) -> R:
+        angle = self.speed * t
+        return R.from_rotvec(angle * self.axis)
+
+    def __repr__(self) -> str:
+        return f"CircleAttitudeMotion(speed={self.speed}, axis={self.axis.tolist()})"
+
+class LinearAttitudeMotion(AttitudeMotion):
+    """Attitude interpolates linearly between two orientations."""
+    def __init__(self, start: R, end: R, duration: float):
+        """
+        Args:
+            start (R): Initial orientation.
+            end (R): Final orientation.
+            duration (float): Time duration over which interpolation occurs.
+        """
+        self.start = start
+        self.end = end
+        self.duration = duration
+        self.slerp = R.slerp(0, 1, [self.start, self.end])  # Pre-compute slerp object
+
+    def __call__(self, t: float) -> R:
+        alpha = np.clip(t / self.duration, 0.0, 1.0)
+        return self.slerp(alpha)
+
+    def __repr__(self) -> str:
+        return f"LinearAttitudeMotion(start={self.start.as_quat().tolist()}, end={self.end.as_quat().tolist()}, duration={self.duration})"
+
+class SineAttitudeMotion(AttitudeMotion):
+    """Oscillates around a base orientation with sinusoidal angular offset."""
+    def __init__(self, axis=np.array([0, 1, 0]), frequency=1.0, amplitude=0.5, base: R = R.identity()):
+        """
+        Args:
+            axis (array-like): Axis around which to oscillate.
+            frequency (float): Frequency of oscillation.
+            amplitude (float): Max angular deviation in radians.
+            base (R): Base orientation around which to oscillate.
+        """
+        self.axis = np.array(axis) / np.linalg.norm(axis)
+        self.frequency = frequency
+        self.amplitude = amplitude
+        self.base = base
+
+    def __call__(self, t: float) -> R:
+        angle = self.amplitude * np.sin(2 * np.pi * self.frequency * t)
+        oscillation = R.from_rotvec(angle * self.axis)
+        return self.base * oscillation  # Apply oscillation after base orientation
+
+    def __repr__(self) -> str:
+        return f"SineAttitudeMotion(axis={self.axis.tolist()}, frequency={self.frequency}, amplitude={self.amplitude}, base={self.base.as_quat().tolist()})"
