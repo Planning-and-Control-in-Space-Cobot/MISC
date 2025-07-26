@@ -12,8 +12,8 @@ import open3d as o3d
 import pyvista as pv
 import matplotlib.pyplot as plt
 
-from MapCreation.ObstacleMotion import SineMotion, NoAttitudeMotion
-from MapCreation.Obstacle import Obstacle  # Updated import for Obstacle class
+from MapCreation.ObstacleMotion import SineMotion, NoMotion, NoAttitudeMotion
+from MapCreation.Obstacle import Obstacle
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
@@ -88,26 +88,33 @@ def main():
         dynMesh = cube7
         finalMesh = cube1 + cube4 + cube5 + cube6 + cube8
 
-    # Static point cloud
-    pcd = sample_tmesh(finalMesh, number_of_points=args.pcd_size)
+    # Create static obstacle
+    static_obstacle = Obstacle(
+        motion=NoMotion(),
+        attitude=NoAttitudeMotion(),
+        pcd=sample_tmesh(finalMesh, number_of_points=args.pcd_size),
+        mesh=finalMesh
+    )
 
-    # Dynamic obstacle
-    dyn_pcd = sample_tmesh(dynMesh, number_of_points=50000)
-    dyn_motion = SineMotion()
-    dyn_attitude = NoAttitudeMotion()
-    dyn_obstacle = Obstacle(motion=dyn_motion, attitude=dyn_attitude, pcd=dyn_pcd, mesh=dynMesh)
+    # Create dynamic obstacle
+    dyn_obstacle = Obstacle(
+        motion=SineMotion(),
+        attitude=NoAttitudeMotion(),
+        pcd=sample_tmesh(dynMesh, number_of_points=50000),
+        mesh=dynMesh
+    )
 
+    # Save all obstacles
     with open(outputFile, "wb") as f:
         pickle.dump({
-            "staticPcd": np.asarray(pcd.points),
-            "dynamicObstacles": [dyn_obstacle.to_dict()]
+            "obstacles": [static_obstacle.to_dict(), dyn_obstacle.to_dict()]
         }, f)
 
     print(f"Saved environment to {outputFile}")
 
     if args.visualize:
         pv_ = pv.Plotter()
-        static_cloud = pv.PolyData(np.asarray(pcd.points))
+        static_cloud = pv.PolyData(np.asarray(static_obstacle.getPcd(0).points))
         pv_.add_mesh(static_cloud, color='blue', point_size=2, render_points_as_spheres=True)
 
         dyn_cloud = pv.PolyData(np.asarray(dyn_obstacle.getPcd(0).points))
