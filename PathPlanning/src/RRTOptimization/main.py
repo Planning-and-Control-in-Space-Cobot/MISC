@@ -7,7 +7,6 @@ from typing import List, Tuple
 from multiprocessing import Process, Manager, Lock
 import multiprocessing as mp
 
-
 import numpy as np
 import open3d as o3d
 import pyvista as pv
@@ -19,7 +18,7 @@ import pickle
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 
-from Environment import EnvironmentHandler
+from Environment import EnvironmentHandler as EnvironmentHandler
 
 from Obstacle import Obstacle
 from Robot import Robot
@@ -29,7 +28,6 @@ from GlobalOptimalPlanner import GlobalOptimalPlanner
 
 from Simulator import Simulator
 from Simulator.SpaceCobotModel import SpaceCobot
-
 
 def run_global_optimization(globalOptimalPlanner,
                             robot,
@@ -75,11 +73,11 @@ def run_global_optimization(globalOptimalPlanner,
     return initialPath, dt, prevCost
 
 def globalOptimization(stateLowerBound, 
-                        stateUpperBound, 
-                        pcdPath, 
-                        J, 
-                        A,
-                        m,
+                       stateUpperBound, 
+                       pcdPath, 
+                       J, 
+                       A,
+                       m,
                        initialPath : List[OptimizationState], 
                        sharedData : dict, 
                        lock) -> None:
@@ -106,120 +104,149 @@ def globalOptimization(stateLowerBound,
     Returns:
         None
     """
-    
-    _allOptimalPaths =  []
+    try:
+        _allOptimalPaths = []
 
-    prevCost = 0
-    prevDt = 0.2
-    
-    collisionObstacles = []
-    i=0
-
-    print(f"State Min Values: {stateLowerBound}")
-    print(f"State Max Values: {stateUpperBound}")
-
-    environment = EnvironmentHandler(
-        o3d.io.read_point_cloud(pcdPath)
-    )
-    robot = Robot(
-        J=J,
-        A=A,
-        m=m,
-    )
-
-    globalOptimizer = GlobalOptimalPlanner(
-        stateMinValues=stateLowerBound, 
-        stateMaxValues=stateUpperBound,
-        env=environment,
-        robot=robot,
-    )
-    while True:
-        print(f"{Fore.YELLOW}Global Optimization Iteration {i}{Style.RESET_ALL}")
-        i += 1
-        with lock:
-            _currentPosition = sharedData["currentPosition"]
-            _atEnd = sharedData["atEnd"]
+        prevCost = 0
+        prevDt = 0.2
         
-        if _atEnd:
-            print(Fore.GREEN + "Global optimization finished." + Style.RESET_ALL)
-            allOptimalPaths = _allOptimalPaths
-            break
-            
-        if currentPosition is None:
-            print(Fore.YELLOW + f"Waiting for the current position to be set" + Style.RESET_ALL)
-            time.sleep(0.1)
-            continue
+        collisionObstacles = []
+        i=0
 
-        startPointIndex = min(
-            range(len(initialPath)), 
-            key=lambda j: np.linalg.norm(initialPath[j].x - _currentPosition.x)
+        print(f"State Min Values: {stateLowerBound}")
+        print(f"State Max Values: {stateUpperBound}")
+
+        environment = EnvironmentHandler(
+            pcdPath
         )
 
-        _initialPath = [_currentPosition] + initialPath[startPointIndex + 1:]
-        obstacles, maxDistances = robot.getObstacles(environment, _initialPath)
+        pv_ = pv.Plotter()
+        pv_ = environment.visualizeCoalMesh(pv_)
+        for obs in environment.pyvistaMeshes:
+            pv_.add_mesh(obs, color='white', show_edges=True, opacity=1)
+        pv_.add_axes()
+        pv_.show()
+
+
+
+        robot = Robot(
+            J=J,
+            A=A,
+            m=m,
+        )
+
+        globalOptimizer = GlobalOptimalPlanner(
+            stateMinValues=stateLowerBound, 
+            stateMaxValues=stateUpperBound,
+            env=environment,
+            robot=robot,
+        )
 
         newCollisionsObstacles = []
-        for j, p in enumerate(initialPath):
-            if p not in _initialPath:
+        while True:
+            print(f"{Fore.YELLOW}Global Optimization Iteration {i}{Style.RESET_ALL}")
+            i += 1
+            with lock:
+                _currentPosition = sharedData["currentPosition"]
+                _atEnd = sharedData["atEnd"]
+            
+            if _atEnd:
+                print(Fore.GREEN + "Global optimization finished." + Style.RESET_ALL)
+                allOptimalPaths = _allOptimalPaths
+                break
+                
+            if _currentPosition is None:
+                print(Fore.YELLOW + f"Waiting for the current position to be set" + Style.RESET_ALL)
+                time.sleep(0.1)
                 continue
-            indexNewPath = _initialPath.index(p)
-            for k, col in collisionObstacles:
-                if col.iteration == j:
-                    newCollisionsObstacles.append(
-                        Obstacle(
-                            closestPointObstacle=col.closestPointObstacle,
-                            closestPointRobot=col.closestPointRobot,
-                            normal=col.normal,
-                            iteration=indexNewPath,
-                        )
-                    )
-                    break
-        obstacles += newCollisionsObstacles
 
-        print(Fore.YELLOW +  f"Length of the path is {len(_initialPath)} and starting point is {startPointIndex}" + Style.RESET_ALL)
-
-        timeStart = time.time()
-        try:
-            _optimalTrajectory, _newDt, _cost = globalOptimizer.optimize(
-                _initialPath, 
-                obstacles, 
-                maxDistances, 
-                prevDt, 
-                _currentPosition, 
-                _initialPath[-1], 
+            startPointIndex = min(
+                range(len(initialPath)), 
+                key=lambda j: np.linalg.norm(initialPath[j].x - _currentPosition.x)
             )
 
-        except Exception as e:
-            print(Fore.RED + f"Error during global optimization: {e}" + Style.RESET_ALL)
-            continue
+            _initialPath = [_currentPosition] + initialPath[startPointIndex + 1:]
 
-        timeEnd = time.time()
-        print(Fore.YELLOW + f"Global optimization took {timeEnd - timeStart:.3f} seconds" + Style.RESET_ALL)
+            obstacles, maxDistances = robot.getObstacles(environment, _initialPath)
 
-        collisionFree = robot.collisionFree(_optimalTrajectory, environment)
+            print(Fore.RED + f"Num Collision Obstacles: {len(newCollisionsObstacles)}" + Style.RESET_ALL)
+            obstacles += newCollisionsObstacles
 
-        _allOptimalPaths.append((_optimalTrajectory, _newDt, _cost))
+            print(Fore.YELLOW +  f"Length of the path is {len(_initialPath)} and starting point is {startPointIndex}" + Style.RESET_ALL)
 
-        if collisionFree:
-            print(Fore.CYAN + "No Collision found, updating global variables." + Style.RESET_ALL)
-            with lock:
-                sharedData["currentTrajectory"] = _optimalTrajectory
-                sharedData["currentTimeStep"] = _newDt
-            
-            costVariation = np.abs(prevCost - _cost) / _cost
-            timeVariation = np.abs(prevDt - _newDt) / _newDt
-            
-            if costVariation < 0.01 and timeVariation < 0.01:
-                print(Fore.GREEN + "Global optimization converged." + Style.RESET_ALL)
+            timeStart = time.time()
+            try:
+                _optimalTrajectory, _newDt, _cost = globalOptimizer.optimize(
+                    _initialPath, 
+                    obstacles, 
+                    maxDistances, 
+                    prevDt, 
+                    _currentPosition, 
+                    _initialPath[-1], 
+                )
+
+            except Exception as e:
+                print(Fore.RED + f"Error during global optimization: {e}" + Style.RESET_ALL)
+                continue
+
+            timeEnd = time.time()
+            print(Fore.YELLOW + f"Global optimization took {timeEnd - timeStart:.3f} seconds" + Style.RESET_ALL)
+
+            collisionFree = robot.collisionFree(_optimalTrajectory, environment)
+
+            _allOptimalPaths.append((_optimalTrajectory, _newDt, _cost))
+
+            if collisionFree:
+                newCollisionsObstacles = []
+                print(Fore.CYAN + "No Collision found, updating global variables." + Style.RESET_ALL)
                 with lock:
-                    sharedData["allOptimalPaths"] = _allOptimalPaths
-                break
+                    sharedData["currentTrajectory"] = _optimalTrajectory
+                    sharedData["currentTimeStep"] = _newDt
+                
+                costVariation = np.abs(prevCost - _cost) / _cost
+                timeVariation = np.abs(prevDt - _newDt) / _newDt
+                
+                if costVariation < 0.01 and timeVariation < 0.01:
+                    print(Fore.GREEN + "Global optimization converged." + Style.RESET_ALL)
+                    with lock:
+                        sharedData["allOptimalPaths"] = _allOptimalPaths
+                    break
+                else:
+                    initialPath = _optimalTrajectory
+                    prevCost = _cost
+                    prevDt = _newDt
             else:
-                initialPath = _optimalTrajectory
-                prevCost = _cost
-                prevDt = _newDt
-        else:
-            pass
+                newCollisionsObstacles.extend(robot.getCollision(environment, _optimalTrajectory))
+                for j, p in enumerate(initialPath):
+                    if p not in _initialPath:
+                        continue
+                    indexNewPath = _initialPath.index(p)
+                    for k, col in collisionObstacles:
+                        if col.iteration == j:
+                            newCollisionsObstacles.append(
+                                Obstacle(
+                                    closestPointObstacle=col.closestPointObstacle,
+                                    closestPointRobot=col.closestPointRobot,
+                                    normal=col.normal,
+                                    iteration=indexNewPath,
+                                )
+                            )
+                            break
+                for no in newCollisionsObstacles:
+                    print(f"Obstacle at iteration {no.iteration} with distance {no.minDistance} normal {no.normal}")
+                
+                drawEnvironmentWithNormals(
+                    environment, 
+                    _optimalTrajectory, 
+                    newCollisionsObstacles, 
+                    robot
+                )
+
+                print(newCollisionsObstacles)
+                print(Fore.RED + "Collision found, retrying global optimization." + Style.RESET_ALL)
+                pass
+    except Exception as e:
+        print(Fore.RED + f"An error occurred during global optimization: {e}" + Style.RESET_ALL)
 
 def localOptimization(
         stateLowerBound : np.ndarray,
@@ -260,7 +287,7 @@ def localOptimization(
         
     """
     environment = EnvironmentHandler(
-        o3d.io.read_point_cloud(pcdPath)
+        pcdPath
     )
     robot = Robot(
         J=J,
@@ -317,8 +344,6 @@ def localOptimization(
         else:
             initialLocalTrajectory.extend([initialLocalTrajectory[-1]] * (localHorizon - len(initialLocalTrajectory)))
         
-
-
         obstacles, maxDistances = robot.getObstacles(
             environment,
             initialLocalTrajectory, 
@@ -451,6 +476,44 @@ def drawLOTWithGOTAndFCP(
     pv_.show_grid()
     pv_.show()
 
+def drawEnvironmentWithNormals(environment, path, obstacles, robot):
+    pv_ = pv.Plotter()
+
+    envMeshes = environment.pyvistaMeshes
+    for mesh in envMeshes:
+        pv_.add_mesh(mesh, color='white', show_edges=True, opacity=0.5)
+    
+    #for p in path:
+    #    x = p.x
+    #    q = p.q
+
+    #    T = np.eye(4)
+    #    T[:3, :3] = trf.Rotation.from_quat(q).as_matrix()
+    #    T[:3, 3] = x
+    #    cube = robot.getPVMesh(x, trf.Rotation.from_quat(q))
+    #    pv_.add_mesh(cube, color='blue', show_edges=True)
+    
+    for obs in obstacles:
+        plane = pv.Plane(
+            center=obs.closestPointObstacle,
+            direction=obs.normal,
+            i_size=0.1,
+            j_size=0.1,
+        )
+    
+        arrow = pv.Arrow(
+            start=obs.closestPointObstacle,
+            direction=obs.normal,
+            scale=1.1,
+            tip_length=0.05,
+        )
+        pv_.add_mesh(plane, color='red', show_edges=True, opacity=0.5)
+        pv_.add_mesh(arrow, color='green', show_edges=True, opacity=0.5)
+
+    pv_.add_axes()
+    pv_.show_grid()
+    pv_.show()
+
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -496,10 +559,8 @@ def main():
             f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file."
         )
 
-    pcd = o3d.io.read_point_cloud(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
-    )
-    environment = EnvironmentHandler(pcd)
+    environmentPath = os.path.join(script_dir, args.map)
+    environment = EnvironmentHandler(environmentPath)
 
     path = np.load(os.path.join(script_dir, args.path))
     originalPosition = path["positions"]
@@ -508,6 +569,16 @@ def main():
         OptimizationState(originalPosition[i], originalOrientation[i])
         for i in range(len(originalPosition))
     ]
+    A = np.load(os.path.join(script_dir, "A_matrix.npy"))
+    J = np.load(os.path.join(script_dir, "J_matrix.npy"))
+    m = np.load(os.path.join(script_dir, "mass.npy"))
+    robot = Robot(
+        J,
+        A,
+        m,
+    )
+
+    print("Setting up the optimization parameters")
 
     minV = np.array([-5, -5, -5])
     maxV = np.array([5, 5, 5])
@@ -524,25 +595,16 @@ def main():
         initialPath[i].w = np.clip(w, minW, maxW)
 
     print("Creating Robot object")
-    A = np.load(os.path.join(script_dir, "A_matrix.npy"))
-    J = np.load(os.path.join(script_dir, "J_matrix.npy"))
-    m = np.load(os.path.join(script_dir, "mass.npy"))
-
-    robot = Robot(
-        J,
-        A,
-        m,
-    )
 
     stateLowerBound = np.hstack([
-        np.array([0.0, 3.0, 0.0]),  # x, y, z
+        np.array([-1.5, -1.5, -2.5]),  # x, y, z
         minV,
         np.array([-1, -1, -1, -1]), 
         minW,
     ])
 
     stateUpperBound = np.hstack([
-        np.array([3.0, 6.0, 7.0]),  # x, y, z
+        np.array([2.5, 2.5, 5.0]),  # x, y, z
         maxV,
         np.array([1, 1, 1, 1]),
         maxW,
@@ -602,7 +664,7 @@ def main():
         args=(
             stateLowerBound, 
             stateUpperBound, 
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map), 
+            environmentPath,
             J, 
             A,
             m, 
@@ -618,7 +680,7 @@ def main():
         args=(
             stateLowerBound, 
             stateUpperBound, 
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map),
+            environmentPath,
             J,
             A,
             m,

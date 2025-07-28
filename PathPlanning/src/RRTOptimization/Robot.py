@@ -148,53 +148,56 @@ class face():
         minDistance, pt1, pt2, normal = environment.distance(
             self.faceObj, pos + R.apply(self.centerOffset), R
         )
-
+        
         # Strange BUG in coal, distance return Nan for all values of normal
         normal = (pt1 - pt2) / np.linalg.norm(pt1 - pt2)
         if np.dot(normal, R.apply(self.normal)) > -0.2:
             # If the normal of the face is not facing the obstacle, we ignore it
             return None
-        """
-        pv_ = pv.Plotter()
-        pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
+        #pv_ = pv.Plotter()
 
-        square = pv.Box(bounds=(
-            -self.sideLength[0] / 2, self.sideLength[0] / 2,
-            -self.sideLength[1] / 2, self.sideLength[1] / 2,
-            -self.sideLength[2] / 2, self.sideLength[2] / 2
-        ))
+        #obstacleMeshes = environment.pyvistaMeshes
+        #for obs in obstacleMeshes:
+        #    if obs is not None:
+        #        pv_.add_mesh(obs, color="gray", opacity=0.5)
 
-        transform = np.eye(4)
-        transform[:3, :3] = R.as_matrix()
-        transform[:3, 3] = pos + self.centerOffset
-        square.transform(transform)
+        #square = pv.Box(bounds=(
+        #    -self.sideLength[0] / 2, self.sideLength[0] / 2,
+        #    -self.sideLength[1] / 2, self.sideLength[1] / 2,
+        #    -self.sideLength[2] / 2, self.sideLength[2] / 2
+        #))
 
-        pv_.add_mesh(square, color="red", opacity=0.5)
+        #transform = np.eye(4)
+        #transform[:3, :3] = R.as_matrix()
+        #transform[:3, 3] = pos + self.centerOffset
+        #square.transform(transform)
 
-        pt1Mesh = pv.Sphere(radius=0.01, center=pt1)
-        pt2Mesh = pv.Sphere(radius=0.01, center=pt2)
-        pv_.add_mesh(pt1Mesh, color="blue", opacity=0.5)
-        pv_.add_mesh(pt2Mesh, color="green", opacity=0.5)
+        #pv_.add_mesh(square, color="red", opacity=0.5)
 
-        plane = pv.Plane(
-            center=pos + self.centerOffset,
-            direction=self.normal,
-            i_size=self.sideLength[0],
-            j_size=self.sideLength[1],
-        )
+        #pt1Mesh = pv.Sphere(radius=0.01, center=pt1)
+        #pt2Mesh = pv.Sphere(radius=0.01, center=pt2)
+        #pv_.add_mesh(pt1Mesh, color="blue", opacity=0.5)
+        #pv_.add_mesh(pt2Mesh, color="green", opacity=0.5)
 
-        arrow   = pv.Arrow( 
-            start=pt2, 
-            direction=normal, 
-            scale=0.1, 
-            tip_length=0.1
-        )
+        #plane = pv.Plane(
+        #    center=pos + self.centerOffset,
+        #    direction=self.normal,
+        #    i_size=self.sideLength[0],
+        #    j_size=self.sideLength[1],
+        #)
 
-        pv_.add_mesh(plane, color="orange", opacity=0.5)
-        pv_.add_mesh(arrow, color="purple", opacity=0.5)
+        #arrow   = pv.Arrow( 
+        #    start=pt2, 
+        #    direction=normal, 
+        #    scale=0.1, 
+        #    tip_length=0.1
+        #)
+
+        #pv_.add_mesh(plane, color="orange", opacity=0.5)
+        #pv_.add_mesh(arrow, color="purple", opacity=0.5)
 
 
-        pv_.show()"""
+        ##pv_.show()
 
         return Obstacle(pt2, normal, minDistance, iter, pt1)
 
@@ -352,10 +355,6 @@ class Robot(Model):
         anyCollision = False
         obstacles, maxDistance = [], []
         for i, p in enumerate(path):
-            collision, _, _, _, _ = environment.collide(
-                self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
-            )
-            
             _minDistance = []
             _obstacles = []
             for f in self.faces:
@@ -370,6 +369,7 @@ class Robot(Model):
                         _obstacles.append(obs)
                         obstacles.append(obs)
             if _minDistance == []:
+                print((f"Warning: No obstacle detected for all faces in iteration {i}"))
                 md, pt1, pt2, _ = environment.distance(
                     self.fcl_obj, p.x, trf.Rotation.from_quat(p.q)
                 )
