@@ -38,14 +38,14 @@ def tmesh_to_o3d(tmesh: trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
 
 def sample_tmesh(tmesh: trimesh.Trimesh, number_of_points=200000) -> o3d.geometry.PointCloud:
     o3d_mesh = tmesh_to_o3d(tmesh)
-    return o3d_mesh.sample_points_uniformly(number_of_points=number_of_points)
+    return o3d_mesh.sample_points_poisson_disk(number_of_points=number_of_points)
 
 def main():
     parser = argparse.ArgumentParser(description="Create a 3D mesh and visualize it.")
     parser.add_argument('--output', type=str, default='environment.pkl', help='Output file name for the mesh')
     parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
     parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
-    parser.add_argument('--pcd-size', type=int, default=500000, help='Number of points to sample from the mesh')
+    parser.add_argument('--pcd-size', type=int, default=5000, help='Number of points to sample from the mesh')
     args = parser.parse_args()
 
     outputFile = args.output
@@ -114,6 +114,20 @@ def main():
 
     if args.visualize:
         pv_ = pv.Plotter()
+        robot = pv.Cube(bounds=(-0.45/2, 0.45/2, -0.45/2, 0.45/2, -0.12/2, 0.12/2))
+        transform = np.eye(4)
+        transform[:3, :3] = np.eye(3)  # Identity rotation
+        transform[:3, 3] = np.array([0.0, -1.0, 0.0])  # Translation to center the cube
+        robot.transform(transform)
+        pv_.add_mesh(robot, color='green', show_edges=True)
+
+        robot = robot.copy()
+        transform = np.eye(4)
+        transform[:3, :3] = np.eye(3)  # Identity rotation
+        transform[:3, 3] = np.array([0.0, 2.0, 4.0])  # Translation to center the cube
+        robot.transform(transform)
+        pv_.add_mesh(robot, color='green', show_edges=True)
+
         static_cloud = pv.PolyData(np.asarray(static_obstacle.getPcd(0).points))
         pv_.add_mesh(static_cloud, color='blue', point_size=2, render_points_as_spheres=True)
 
@@ -124,7 +138,7 @@ def main():
         pv_.show_grid()
 
         n_frames = 100
-        duration = 5.0
+        duration = 30.0
         delay = duration / n_frames
 
         pv_.open_gif("dynamic_obstacle.gif")

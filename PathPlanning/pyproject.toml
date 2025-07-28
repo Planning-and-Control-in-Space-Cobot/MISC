@@ -32,7 +32,7 @@ dependencies = [
 
 [project.scripts]
 #run-3d = "3D.main:main"
-rrtSin = "RRT.RRT:main"
+rrt = "RRT.main:main"
 rrtOpt = "RRTOptimization.main:main"
 
 rrtData = "RRTOptimization.DataProcessing:main"

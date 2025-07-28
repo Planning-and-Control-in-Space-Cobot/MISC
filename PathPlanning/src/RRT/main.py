@@ -53,9 +53,11 @@ def execute_run(run):
     )
     timeTaken = time.time() - startTime
 
+    pruneTime = time.time()
+    planner.prunePath(path)
+    pruneTime = time.time() - pruneTime
 
-
-    return {"success": path != [], "timeTaken": timeTaken, "goalBias": run.goalBias, "stepSize": run.stepSize, "pcd" : run.pcdPath}
+    return {"success": path != [], "timeTaken": timeTaken, "goalBias": run.goalBias, "stepSize": run.stepSize, "pcd" : run.pcdPath, "pruneTime" : pruneTime, "pathLength": len(path) if path else 0, "prunedPathLength": len(planner.prunePath(path)) if path else 0}
 
 def main():
     def strToBool(v):
@@ -80,8 +82,8 @@ def main():
     if not os.path.exists(os.path.join(os.path.dirname(__file__), env_name)):
         raise FileNotFoundError(f"Environment '{env_name}' does not exist.")
 
-    pcd = o3d.io.read_point_cloud(os.path.join(os.path.dirname(__file__), env_name))
-    env = EnvironmentHandler(pcd)
+    #pcd = o3d.io.read_point_cloud(os.path.join(os.path.dirname(__file__), env_name))
+    env = EnvironmentHandler(os.path.join(os.path.dirname(__file__), env_name))
 
     robot = env.buildBox()
     robotMesh = pv.Box(bounds=(-0.225, 0.225, -0.225, 0.225, -0.06, 0.06))
@@ -91,17 +93,17 @@ def main():
     maxPos = np.array([4.0, 6, 10])
     ## Now do same path with rrtcxx and compare time taken
 
-    start = rrtcxx.State(np.array([0.5, 3.0, 1.0]), np.array([0, 0, 0, 1]))
-    goal = rrtcxx.State(np.array([0.5, 5.0, 6.0]), np.array([0, 0, 0, 1]))
-    boundsX = np.array([0.0, 3.0])
-    boundsY = np.array([3.0, 5.0])
-    boundsZ = np.array([0.0, 7.0])
-    numRunsMap = 3
+    start = rrtcxx.State(np.array([0.0, -1.0, 0.0]), np.array([0, 0, 0, 1]))
+    goal = rrtcxx.State(np.array([0.5, 2.0, 4.0]), np.array([0, 0, 0, 1]))
+    boundsX = np.array([-1.5, 2.5])
+    boundsY = np.array([-1.5, 2.5])
+    boundsZ = np.array([-2.5, 5.0])
+    numRunsMap = 300
     if args.study_case:
         allRuns = []
 
         # Load simple map
-        simplePcdPath = os.path.join(os.path.dirname(__file__), "simpleMap.pcd")
+        simplePcdPath = os.path.join(os.path.dirname(__file__), "simpleMap.pkl")
         simpleMinPos = np.array([0, -2, 0])
         simpleMaxPos = np.array([10, 6, 5])
         simpleStartPos = np.array([3.0, -1.0, 3.0])
@@ -118,7 +120,7 @@ def main():
 
 
         # Load Middle Map
-        middlePcdPath = os.path.join(os.path.dirname(__file__), "middleMap.pcd")
+        middlePcdPath = os.path.join(os.path.dirname(__file__), "middleMap.pkl")
         middleMinPos = np.array([1.5, 1, 0])
         middleMaxPos = np.array([4.0, 6, 10])
         middleStartPos = np.array([2.75, 2, 1])
@@ -134,7 +136,7 @@ def main():
         ]
         allRuns.extend(maps)
 
-        complexPcdPath = os.path.join(os.path.dirname(__file__), "complexMap.pcd")
+        complexPcdPath = os.path.join(os.path.dirname(__file__), "complexMap.pkl")
         complexMinPos = np.array([1.5, 1, 0])
         complexMaxPos = np.array([4.0, 6, 10])
         complexStartPos = np.array([0.5, 3.0, 1.0]) 
@@ -169,24 +171,68 @@ def main():
         print(f"Results saved to {output_json} and {output_pkl}")
         return
         
-
-
     startTime = time.time()
     payloadTranslation = np.array([-0.45, 0.0, 0.0])
     payloadSize = np.array([0.45, 0.45, 0.12])
     usePayload = False
-    planner = rrtcxx.RRTPlanner3D(env.triangleVertex, env.triangleIndex, payloadTranslation, payloadSize, usePayload, 100000, 0.1, 0.05, 0.0, 3.0,
-                                   3.0, 6.0, 0.0, 7.0)
+    triangleIndex, triangleVertex = env.computeTriangles()
+    planner = rrtcxx.RRTPlanner3D(triangleVertex, 
+                                  triangleIndex,
+                                  payloadTranslation,
+                                  payloadSize, 
+                                  usePayload, 
+                                  100000, 
+                                  0.1, 
+                                  0.05,
+                                  boundsX[0], 
+                                  boundsX[1],
+                                  boundsY[0],
+                                  boundsY[1],
+                                  boundsZ[0],
+                                  boundsZ[1]) 
+
     path = planner.plan(start, goal)
     prunedPath = planner.prunePath(path)
     endTime = time.time()
     print(f"RRTCXX Planning time: {endTime - startTime:.2f} seconds")
+    #pv_ = pv.Plotter()
+    #for obs in env.pyvistaMeshes:
+    #    pv_.add_mesh(obs, color='white', show_edges=True, opacity=0.5)
+
     pv_ = pv.Plotter()
-    pv_.add_mesh(env.voxel_mesh, color='white', show_edges=True, opacity=0.5)
-    
-    
-    
+    # Plot 
+    triangles = np.hstack([np.full((triangleIndex.shape[0], 1), 3), triangleIndex])
+    triangles = triangles.astype(np.int32).flatten()
+    mesh_vis = pv.PolyData(triangleVertex, triangles)
+    pv_.add_mesh(mesh_vis, color='cyan', show_edges=True, opacity=0.5)
+
     if path == []:
+        cube = robotMesh.copy()
+        xStart = start.position
+        qStart = start.q
+        T = np.eye(4)
+        T[:3, :3] = sp.spatial.transform.Rotation.from_quat(qStart).as_matrix()
+        T[:3, 3] = xStart
+        cube.transform(T)
+        pv_.add_mesh(cube, color='red', show_edges=True)
+
+        cube = robotMesh.copy() 
+        xGoal = goal.position
+        qGoal = goal.q
+        T = np.eye(4)
+        T[:3, :3] = sp.spatial.transform.Rotation.from_quat(qGoal).as_matrix()
+        T[:3, 3] = xGoal
+        cube.transform(T)
+        pv_.add_mesh(cube, color='red', show_edges=True)
+        print("No path found")
+
+        allowedEnvironment = pv.Box(
+            bounds=(boundsX[0], boundsX[1], boundsY[0], boundsY[1], boundsZ[0], boundsZ[1])
+        )
+        pv_.add_mesh(allowedEnvironment, color='green', show_edges=True, opacity=0.3)
+
+        pv_.show()
+
         return
     for p in path:
         x = p.position
@@ -209,6 +255,8 @@ def main():
         cube = robotMesh.copy()
         cube.transform(T)
         pv_.add_mesh(cube, color='red', show_edges=True)
+        pv_.show_axes()
+        pv_.show_grid()
     
     print(f"Path length: {len(path)}")
     print(f"Pruned path length: {len(prunedPath)}")
