@@ -30,427 +30,6 @@ from GlobalOptimalPlanner import GlobalOptimalPlanner
 from Simulator import Simulator
 from Simulator.SpaceCobotModel import SpaceCobot
 
-
-def run_global_optimization(globalOptimalPlanner,
-                            robot,
-                            environment,
-                            initialPath,
-                            obstacles, 
-                            maxDistances,
-                            dt,
-                            xi, 
-                            xf):
-
-    optimizationSucessful = False
-    while not optimizationSucessful:
-        Starttime = time.time()
-        optimizedTrajectory, newDt, cost = globalOptimalPlanner.optimize(
-            initialPath, 
-            obstacles, 
-            maxDistances, 
-            dt, 
-            xi, 
-            xf
-        )
-        print(f"Global optimization took {time.time() - Starttime:.3f} seconds")
-        print(f"Optimized trajectory length: {len(optimizedTrajectory)}")
-        print(f"Optimized trajectory cost: {cost}")
-        print(f"Optimized trajectory dt: {newDt}")
-
-        obstacles, maxDistances, anyCollision, collisionObstacles = robot.getObstacles(
-            environment, 
-            optimizedTrajectory, 
-            initialPath, 
-            obstacles, 
-            maxDistances    
-        )
-
-        if not anyCollision:
-            initialPath = optimizedTrajectory
-            dt = newDt
-            prevCost = cost
-            optimizationSucessful = True
-            print("Total Cost :", cost)
-
-    return initialPath, dt, prevCost
-
-def globalOptimization(stateLowerBound, 
-                        stateUpperBound, 
-                        pcdPath, 
-                        J, 
-                        A,
-                        m,
-                       initialPath : List[OptimizationState], 
-                       sharedData : dict, 
-                       lock) -> None:
-    """Performs global optimization on the initial path.
-    
-    This function uses the GlobalOptimalPlanner to optimize the initial path
-    based on the environment and obstacles detected. It publishes the optimized 
-    trajectory to global variables that can be accessed by other parts of the 
-    code.
-
-    Parameters:
-        globalOptimizer (GlobalOptimalPlanner):
-            Instance of the GlobalOptimalPlanner class used to define and solve
-            the optimization problem.
-        environment (EnvironmentHandler):
-            Instance of the EnvironmentHandler class that provides the 
-            environment and obstacles for the optimization.
-        initialPath (list[OptimizationState]):
-            List of optimization states representing the initial path to be 
-            optimized.
-        robot (Robot):
-            Instance of the Robot class that provides the robot model and 
-            dynamics for the optimization.
-    Returns:
-        None
-    """
-    
-    _allOptimalPaths =  []
-
-    prevCost = 0
-    prevDt = 0.2
-    
-    collisionObstacles = []
-    i=0
-
-    print(f"State Min Values: {stateLowerBound}")
-    print(f"State Max Values: {stateUpperBound}")
-
-    environment = EnvironmentHandler(
-        o3d.io.read_point_cloud(pcdPath)
-    )
-    robot = Robot(
-        J=J,
-        A=A,
-        m=m,
-    )
-
-    globalOptimizer = GlobalOptimalPlanner(
-        stateMinValues=stateLowerBound, 
-        stateMaxValues=stateUpperBound,
-        env=environment,
-        robot=robot,
-    )
-    while True:
-        print(f"{Fore.YELLOW}Global Optimization Iteration {i}{Style.RESET_ALL}")
-        i += 1
-        with lock:
-            _currentPosition = sharedData["currentPosition"]
-            _atEnd = sharedData["atEnd"]
-        
-        if _atEnd:
-            print(Fore.GREEN + "Global optimization finished." + Style.RESET_ALL)
-            allOptimalPaths = _allOptimalPaths
-            break
-            
-        if currentPosition is None:
-            print(Fore.YELLOW + f"Waiting for the current position to be set" + Style.RESET_ALL)
-            time.sleep(0.1)
-            continue
-
-        startPointIndex = min(
-            range(len(initialPath)), 
-            key=lambda j: np.linalg.norm(initialPath[j].x - _currentPosition.x)
-        )
-
-        _initialPath = [_currentPosition] + initialPath[startPointIndex + 1:]
-        obstacles, maxDistances = robot.getObstacles(environment, _initialPath)
-
-        newCollisionsObstacles = []
-        for j, p in enumerate(initialPath):
-            if p not in _initialPath:
-                continue
-            indexNewPath = _initialPath.index(p)
-            for k, col in collisionObstacles:
-                if col.iteration == j:
-                    newCollisionsObstacles.append(
-                        Obstacle(
-                            closestPointObstacle=col.closestPointObstacle,
-                            closestPointRobot=col.closestPointRobot,
-                            normal=col.normal,
-                            iteration=indexNewPath,
-                        )
-                    )
-                    break
-        obstacles += newCollisionsObstacles
-
-        print(Fore.YELLOW +  f"Length of the path is {len(_initialPath)} and starting point is {startPointIndex}" + Style.RESET_ALL)
-
-        timeStart = time.time()
-        try:
-            _optimalTrajectory, _newDt, _cost = globalOptimizer.optimize(
-                _initialPath, 
-                obstacles, 
-                maxDistances, 
-                prevDt, 
-                _currentPosition, 
-                _initialPath[-1], 
-            )
-
-        except Exception as e:
-            print(Fore.RED + f"Error during global optimization: {e}" + Style.RESET_ALL)
-            continue
-
-        timeEnd = time.time()
-        print(Fore.YELLOW + f"Global optimization took {timeEnd - timeStart:.3f} seconds" + Style.RESET_ALL)
-
-        collisionFree = robot.collisionFree(_optimalTrajectory, environment)
-
-        _allOptimalPaths.append((_optimalTrajectory, _newDt, _cost))
-
-        if collisionFree:
-            print(Fore.CYAN + "No Collision found, updating global variables." + Style.RESET_ALL)
-            with lock:
-                sharedData["currentTrajectory"] = _optimalTrajectory
-                sharedData["currentTimeStep"] = _newDt
-            
-            costVariation = np.abs(prevCost - _cost) / _cost
-            timeVariation = np.abs(prevDt - _newDt) / _newDt
-            
-            if costVariation < 0.01 and timeVariation < 0.01:
-                print(Fore.GREEN + "Global optimization converged." + Style.RESET_ALL)
-                with lock:
-                    sharedData["allOptimalPaths"] = _allOptimalPaths
-                break
-            else:
-                initialPath = _optimalTrajectory
-                prevCost = _cost
-                prevDt = _newDt
-        else:
-            pass
-
-def localOptimization(
-        stateLowerBound : np.ndarray,
-        stateUpperBound : np.ndarray,
-        pcdPath : str, 
-        J, 
-        A, 
-        m,
-        simulator : Simulator,
-        sharedData : dict, 
-        lock,
-        localHorizon : int = 10
-    ):
-    """Performs local optimization on the current global optimal trajectory.
-
-    This function uses the LocalOptimalPlanner to optimize the local trajectory, 
-    this is a subset of the global optimal trajectory based on the environment 
-    and the obstacles detected. After the optimization, it uses the step to
-    update the current position, so that the global optimization know the 
-    current position of the robot, and only optimized the trajectory from there 
-    to the the goal node
-
-    Parameters:
-        localOptimizer (LocalOptimalPlanner):
-            Instance of the LocalOptimalPlanner class used to define and solve
-            the optimization problem.
-        environment (EnvironmentHandler):
-            Instance of the EnvironmentHandler class that provides the 
-            environment and obstacles for the optimization.
-        robot (Robot):
-            Instance of the Robot class that provides the robot model and 
-            dynamics for the optimization.
-        localHorizon (int, optional):
-            Horizon size for the local optimization. Defaults to 10.
-        
-    Returns:
-        None
-        
-    """
-    environment = EnvironmentHandler(
-        o3d.io.read_point_cloud(pcdPath)
-    )
-    robot = Robot(
-        J=J,
-        A=A,
-        m=m,
-    )
-    localOptimizer = LocalOptimalPlanner(
-        stateMinValues=stateLowerBound, 
-        stateMaxValues=stateUpperBound,
-        env=environment,
-        robot=robot,
-    )
-
-    with lock:
-        _currentTrajectory = sharedData["currentTrajectory"]
-        _currentPosition = sharedData["currentPosition"]
-
-    realPath = [(_currentPosition, -1, None)]
-
-    i = 0 
-    while True:
-        print(Fore.BLUE + f"Local Optimization Iteration {i}" + Style.RESET_ALL)
-
-        with lock:
-            if _currentTrajectory != sharedData["currentTrajectory"]:
-                print(Fore.MAGENTA + f"Current trajectory input changed" + Style.RESET_ALL)
-
-            _currentTrajectory = sharedData["currentTrajectory"]
-            _currentTimeStep = sharedData["currentTimeStep"]
-            _currentPosition = sharedData["currentPosition"]
-            _atEnd = sharedData["atEnd"]
-
-        if _currentTrajectory is None:
-            print(Fore.YELLOW + f"Waiting for the current Trajectory to be set" + Style.RESET_ALL)
-            time.sleep(1)
-            continue
-
-        print(Fore.BLUE + f"Size Global Trajectory: {len(_currentTrajectory)}" + Style.RESET_ALL)
-
-        i += 1
-
-        startPointIndex = min(
-            range(len(_currentTrajectory)),
-            key=lambda j: np.linalg.norm(_currentTrajectory[j].x - _currentPosition.x),
-        )
-
-        print(Fore.BLUE + f"Start point index: {startPointIndex}" + Style.RESET_ALL)
-
-        initialLocalTrajectory = [_currentPosition]
-        initialLocalTrajectory.extend(_currentTrajectory[startPointIndex + 1:])
-
-        if len(initialLocalTrajectory) > localHorizon:
-            initialLocalTrajectory = initialLocalTrajectory[:localHorizon]
-        else:
-            initialLocalTrajectory.extend([initialLocalTrajectory[-1]] * (localHorizon - len(initialLocalTrajectory)))
-        
-
-
-        obstacles, maxDistances = robot.getObstacles(
-            environment,
-            initialLocalTrajectory, 
-        )
-
-        #print(Fore.BLUE + f"Len Initial Trajectory: {len(initialTrajectory)} num Obstacles {len(obstacles)} local horizon {localHorizon}" + Style.RESET_ALL)
-
-        startTime = time.time()
-        _optimalTrajectory, _, _ = localOptimizer.optimize(
-            initialLocalTrajectory,
-            obstacles, 
-            maxDistances, 
-            _currentTimeStep, 
-            _currentPosition, 
-            _currentTrajectory[-1],
-            0
-        )
-
-        endTime = time.time()
-        print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds with simulated Time Step of {_currentTimeStep}" + Style.RESET_ALL)
-
-
-        state = simulator.simulate(
-            _optimalTrajectory[0].get_state(),
-            _optimalTrajectory[0].u,
-            _currentTimeStep
-        )[:, -1]
-
-        state = OptimizationState(
-            x=state[0:3],
-            v=state[3:6],
-            q=state[6:10],
-            w=state[10:13], 
-        )
-
-        realPath[-1][0].u = _optimalTrajectory[0].u
-        realPath.append((state, _currentTimeStep, _currentTrajectory))
-
-        if np.linalg.norm((state.x - _currentTrajectory[-1].x)) < 0.1:
-            print(Fore.GREEN + "Reached the goal node." + Style.RESET_ALL)
-            with lock:
-                sharedData["atEnd"] = True
-                sharedData["finalTrajectory"] = realPath
-            break
-
-        collisionFree = robot.collisionFree(
-            [rp[0] for rp in realPath],
-            environment,
-        )
-        print(Fore.BLUE + f"Collision Found in Real Path: {collisionFree}" + Style.RESET_ALL)
-
-
-        with lock:
-            sharedData["currentPosition"] = state
-
-
-            #drawLOTWithGOTAndFCP(
-            #    environment, 
-            #    robot, 
-            #    _currentTrajectory,
-            #    _optimalTrajectory,
-            #    realPath
-            #)
-
-def drawLOTWithGOTAndFCP(
-
-        environment, 
-        robot, 
-        globalOptimalPath, 
-        localOptimalTrajectory, 
-        fullCorrectPath
-    ):
-    """Draws the Full problem.
-
-    Draws the local optimal trajectory, with the global optimal trajectory, and 
-    the full path taken until the step
-
-    Parameters:
-        environment (EnvironmentHandler):
-            Instance of the EnvironmentHandler class that provides the 
-            environment and obstacles for the optimization.
-        robot (Robot):
-            Instance of the Robot class that provides the robot model and 
-            dynamics for the optimization.
-        globalOptimalPath (List[OptimizationState]):
-            List of optimization states representing the global optimal path.
-        localOptimalTrajectory (List[OptimizationState]):
-            List of optimization states representing the local optimal trajectory.
-        fullCorrectPath (List[Tuple[List[OptimizationState], float]]):
-            List of optimization states representing the full correct path taken.
-    """
-    pv_ = pv.Plotter()
-    pv_.add_mesh(environment.voxel_mesh, color="lightgray", opacity=0.1)
-
-    for p in globalOptimalPath:
-        x = p.x
-        R = trf.Rotation.from_quat(p.q)
-        robotMesh = robot.getPVMesh(x, R)
-        pv_.add_mesh(
-            robotMesh,
-            color="red",
-            show_edges=True,
-            opacity=0.5,
-        )
-
-    for p in localOptimalTrajectory:
-        x = p.x
-        R = trf.Rotation.from_quat(p.q)
-        robotMesh = robot.getPVMesh(x, R)
-        pv_.add_mesh(
-            robotMesh,
-            color="blue",
-            show_edges=True,
-            opacity=0.5,
-        )
-    for p, _ in fullCorrectPath:
-        x = p.x
-        R = trf.Rotation.from_quat(p.q)
-        robotMesh = robot.getPVMesh(x, R)
-        pv_.add_mesh(
-            robotMesh,
-            color="green",
-            show_edges=True,
-            opacity=0.5,
-        )
-    pv_.add_text("Global Optimal Path", position="upper_left", color="red")
-    pv_.add_text("Local Optimal Trajectory", position="upper_right", color="blue")
-    pv_.add_text("Full Correct Path", position="lower_left", color="green")
-    pv_.add_axes()
-    pv_.show_grid()
-    pv_.show()
-
 def main():
     parser = argparse.ArgumentParser(
         description="RRT Path Planning and Optimization"
@@ -486,21 +65,32 @@ def main():
     )
     args = parser.parse_args()
 
-    if not os.path.exists(os.path.join(script_dir, args.path)):
-        raise ValueError(
-            f"Path file '{args.path}' does not exist. Please provide a valid path file."
-        )
-
-    if not os.path.exists(os.path.join(script_dir, args.map)):
-        raise ValueError(
-            f"Map file '{args.map}' does not exist. Please provide a valid point cloud map file."
-        )
-
-    pcd = o3d.io.read_point_cloud(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), args.map)
+    # Get full path file for the path
+    pathFile = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),\
+        args.path
     )
-    environment = EnvironmentHandler(pcd)
 
+    # Get full path file for the map
+    mapFile = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        args.map
+    )
+
+    # Check if the path and map file exists
+    if not os.path.exists(pathFile):
+        raise ValueError(
+            f"Path '{pathFile}' does not exist. Please provide a valid path."
+        )
+    if not os.path.exists(mapFile):
+        raise ValueError(
+            f"Map '{mapFile}' does not exist. Please provide a valid point cloud map file."
+        )
+
+    # Load the map into the environment
+    environment = EnvironmentHandler(mapFile)
+
+    # Load the path from the file (npz) and save in OptimizationState format
     path = np.load(os.path.join(script_dir, args.path))
     originalPosition = path["positions"]
     originalOrientation = path["orientations"]
@@ -523,19 +113,23 @@ def main():
             trf.Rotation.from_quat(initialPath[i].q).inv()).as_rotvec()
         initialPath[i].w = np.clip(w, minW, maxW)
 
-    print("Creating Robot object")
+    _initialPath = initialPath.copy()
+
+    # Loading the robot dynamics parameters
     A = np.load(os.path.join(script_dir, "A_matrix.npy"))
     J = np.load(os.path.join(script_dir, "J_matrix.npy"))
     m = np.load(os.path.join(script_dir, "mass.npy"))
 
+    # Creating the robot object from the loaded dynamics parameters
     robot = Robot(
         J,
         A,
         m,
     )
 
+    # Lower and upper bounds for the state space in the optimization problem
     stateLowerBound = np.hstack([
-        np.array([0.0, 3.0, 0.0]),  # x, y, z
+        np.array([-2.0, -2.0, -2.0]),  # x, y, z
         minV,
         np.array([-1, -1, -1, -1]), 
         minW,
@@ -552,6 +146,128 @@ def main():
     simulator = Simulator(
         spaceCobot
     )
+
+    globalOptimizationStable = False    
+    collisions = []
+
+    globalOptimalPlanner = GlobalOptimalPlanner(
+        stateLowerBound, 
+        stateUpperBound, 
+        environment,
+        robot
+    )
+
+    while not globalOptimizationStable:
+        obstacles, maxDistances = robot.getObstacles(
+            environment,
+            initialPath
+        )
+
+        obstacles.extend(collisions)
+
+        try: 
+            timeStart = time.time()
+            optimizedPath, timeStep = globalOptimalPlanner.optimize(
+                initialPath, 
+                obstacles, 
+                maxDistances, 
+                dt, 
+                initialPath[0], 
+                initialPath[-1]
+            )
+        except Exception as e:
+            print(Fore.RED + f"Error during optimization: {e}" + Style.RESET_ALL)
+
+        timeEnd = time.time()
+        print(Fore.YELLOW + f"Optimization took {timeEnd - timeStart:.4f} seconds" + Style.RESET_ALL)
+
+        print(Fore.RED + f"start Point {initialPath[0].x} end Point {initialPath[-1].x}" + Style.RESET_ALL)
+        print(Fore.RED + f"start Point {optimizedPath[0].x} end Point {optimizedPath[-1].x}" + Style.RESET_ALL)
+
+
+        if robot.collisionFree(optimizedPath, environment):
+            dtVariation = np.abs(timeStep - dt) / dt * 100
+            print(Fore.GREEN + f"Optimization successful with time step variation: {dtVariation:.2f}% - {timeStep}" + Style.RESET_ALL)
+            dt = timeStep 
+            optimizedPath[0] = initialPath[0]
+            optimizedPath[-1] = initialPath[-1]
+            initialPath = optimizedPath
+        
+        else:
+            print(Fore.RED + "Optimization failed due to collisions" + Style.RESET_ALL)
+            newCollisions = robot.getCollision(
+                environment,
+                optimizedPath
+            )
+
+            pv_ = pv.Plotter()
+            pv_ = environment.visualizeCoalMesh(pv_)
+
+            for p in initialPath:
+                x = p.x
+                R = trf.Rotation.from_quat(p.q)
+                robotMesh = robot.getPVMesh(x, R)
+                pv_.add_mesh(
+                    robotMesh,
+                    color="green",
+                    show_edges=True,
+                    opacity=0.5,
+                )
+            
+
+            for o in obstacles:
+                normal = o.normal
+                point = o.closestPointObstacle
+                arrow = pv.Arrow(
+                    start=point,
+                    direction=normal,
+                    scale=0.1,
+                )
+                plane = pv.Plane(
+                    center=point,
+                    direction=normal,
+                    i_size=0.5,
+                    j_size=0.5,
+                )
+                pv_.add_mesh(plane, color="yellow", opacity=0.5)
+                pv_.add_mesh(arrow, color="yellow")
+
+
+            for p in optimizedPath:
+                x = p.x
+                R = trf.Rotation.from_quat(p.q)
+                robotMesh = robot.getPVMesh(x, R)
+                pv_.add_mesh(
+                    robotMesh,
+                    color="blue",
+                    show_edges=True,
+                    opacity=0.5,
+                )
+                
+            collisions.extend(newCollisions)
+            for c in collisions:
+                normal = c.normal
+                point = c.closestPointObstacle
+                arrow = pv.Arrow(
+                    start=point,
+                    direction=normal,
+                    scale=0.1,
+                )
+
+                plane = pv.Plane(
+                    center=point,
+                    direction=normal,
+                    i_size=0.5,
+                    j_size=0.5,
+                )
+                pv_.add_mesh(plane, color="red", opacity=0.5)
+                pv_.add_mesh(arrow, color="red")
+
+            pv_.show_axes()
+            pv_.show_grid()
+            pv_.add_axes_at_origin()
+            pv_.show()
+
 
     optimizationPath = initialPath.copy()
     xi = optimizationPath[0]

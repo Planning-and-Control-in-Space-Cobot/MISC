@@ -413,8 +413,6 @@ class Robot(Model):
                 )
         return collisions
 
-
-
     def drawRobotAndFaces(self : _T):
         """Function to draw the robot and its faces in a pyvista plotter, this is used for debugging purposes"""
         pv_ = pv.Plotter()

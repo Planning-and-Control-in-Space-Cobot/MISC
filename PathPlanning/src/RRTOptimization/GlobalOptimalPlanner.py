@@ -69,6 +69,8 @@ class GlobalOptimalPlanner:
         opti.subject_to(x[:, 0] == xi.get_state())
         opti.subject_to(x[:, -1] == xf.get_state())
 
+        print(f"Initial Path: {initialPath[0].get_state()} Final Path: {initialPath[-1].get_state()}")
+
         for i in range(N - 1):
             opti.subject_to(x[:, i+1] == self.robot.f(x[:, i], u[:, i], _dt))
         
@@ -86,9 +88,9 @@ class GlobalOptimalPlanner:
                         obs.normal.reshape((1, 3)) @ obs.closestPointObstacle + obs.safetyMargin
                     )
                 
-                opti.subject_to(
-                    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= 2*maxDistance**2
-                )
+                #opti.subject_to(
+                #    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= maxDistance**2
+                #)
     
         opti.subject_to(opti.bounded(-3, u, 3))
         opti.subject_to(opti.bounded(self.stateMinValues, x, self.stateMaxValues))
@@ -97,9 +99,9 @@ class GlobalOptimalPlanner:
             opti.subject_to(ca.sumsqr(x[6:10]) == 1)
         
         cost = 0
-        cost += 100000 * _dt
-        for i in range(N):
-            cost += u[:, i].T @ 0.1 @ u[:, i]
+        cost += 1000 * _dt
+#        for i in range(N):
+#            cost += u[:, i].T @ 0.1 @ u[:, i]
 
         opti.minimize(cost)
         opti.solver(
@@ -136,7 +138,6 @@ class GlobalOptimalPlanner:
         x = sol.value(x)
         u = sol.value(u) 
         dt = sol.value(_dt)
-        _cost = sol.value(cost)
 
         optimizedPath = [OptimizationState(
             x=x[0:3, i], 
@@ -147,7 +148,7 @@ class GlobalOptimalPlanner:
             i=i)
         for i in range(N)]
 
-        return optimizedPath, dt, sol.value(cost)
+        return optimizedPath, dt
 
     
     def visualizeTrajectory(
