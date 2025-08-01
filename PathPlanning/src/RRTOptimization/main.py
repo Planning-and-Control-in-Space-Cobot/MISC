@@ -11,6 +11,7 @@ import numpy as np
 import open3d as o3d
 import pyvista as pv
 import scipy.spatial.transform as trf
+from scipy.spatial.transform import Rotation as R, Slerp
 import matplotlib.pyplot as plt
 import pickle
 
@@ -186,7 +187,8 @@ def globalOptimization(stateLowerBound,
                 )
 
             except Exception as e:
-                print(Fore.RED + f"Error during global optimization: {e}" + Style.RESET_ALL)
+                print(Fore.RED + f"{type(e)}" + Style.RESET_ALL)
+                print(Fore.RED + f"{e}")
                 continue
 
             timeEnd = time.time()
@@ -235,12 +237,12 @@ def globalOptimization(stateLowerBound,
                 for no in newCollisionsObstacles:
                     print(f"Obstacle at iteration {no.iteration} with distance {no.minDistance} normal {no.normal}")
                 
-                drawEnvironmentWithNormals(
-                    environment, 
-                    _optimalTrajectory, 
-                    newCollisionsObstacles, 
-                    robot
-                )
+                #drawEnvironmentWithNormals(
+                #    environment, 
+                #    _optimalTrajectory, 
+                #    newCollisionsObstacles, 
+                #    robot
+                #)
 
                 print(newCollisionsObstacles)
                 print(Fore.RED + "Collision found, retrying global optimization." + Style.RESET_ALL)
@@ -301,6 +303,7 @@ def localOptimization(
         robot=robot,
     )
 
+    sharedData["localPlanner"] = []
     with lock:
         _currentTrajectory = sharedData["currentTrajectory"]
         _currentPosition = sharedData["currentPosition"]
@@ -334,79 +337,248 @@ def localOptimization(
             key=lambda j: np.linalg.norm(_currentTrajectory[j].x - _currentPosition.x),
         )
 
-        print(Fore.BLUE + f"Start point index: {startPointIndex}" + Style.RESET_ALL)
+        distance = np.linalg.norm(
+            _currentTrajectory[startPointIndex].x - _currentPosition.x
+        )
 
-        initialLocalTrajectory = [_currentPosition]
-        initialLocalTrajectory.extend(_currentTrajectory[startPointIndex + 1:])
+        print(f"Start Point Index {startPointIndex} distance {distance} {_currentPosition.x}")
 
-        if len(initialLocalTrajectory) > localHorizon:
-            initialLocalTrajectory = initialLocalTrajectory[:localHorizon]
+        if distance > 0.5:
+            trajectory, fullTrajectory = generateTransitionTrajectory(
+                _currentPosition, 
+                _currentTrajectory,
+                _currentTimeStep
+            )
+            """
+
+            with lock:
+                pv_ = pv.Plotter()
+                pv_ = environment.visualizeCoalMesh(pv_)
+
+                for state in realPath:
+                    x = state[0].x
+                    R = trf.Rotation.from_quat(state[0].q)
+                    robotMesh = robot.getPVMesh(x, R)
+                    pv_.add_mesh(
+                        robotMesh,
+                        color="green",
+                        show_edges=True,
+                        opacity=0.5,
+                    )
+                
+                for state in _currentTrajectory:
+                    x = state.x
+                    R = trf.Rotation.from_quat(state.q)
+                    robotMesh = robot.getPVMesh(x, R)
+                    pv_.add_mesh(
+                        robotMesh,
+                        color="blue",
+                        show_edges=True,
+                        opacity=0.5,
+                    )
+                
+                for state in trajectory:
+                    x = state.x
+                    R = trf.Rotation.from_quat(state.q)
+                    robotMesh = robot.getPVMesh(x, R)
+                    pv_.add_mesh(
+                        robotMesh,
+                        color="red",
+                        show_edges=True,
+                        opacity=0.5,
+                    )
+                
+                pv_.add_axes()
+                pv_.show_grid()
+                pv_.add_text("Current Position", position="upper_left", color="green")
+                pv_.add_text("Current Trajectory", position="upper_right", color="blue")
+                pv_.add_text("Transition Trajectory", position="lower_left", color="red")
+                pv_.show()
+                """
+            initialLocalTrajectory = trajectory
         else:
-            initialLocalTrajectory.extend([initialLocalTrajectory[-1]] * (localHorizon - len(initialLocalTrajectory)))
-        
+            print(Fore.BLUE + f"Start point index: {startPointIndex}" + Style.RESET_ALL)
+
+            initialLocalTrajectory = [_currentPosition]
+            initialLocalTrajectory.extend(_currentTrajectory[startPointIndex + 1:])
+
+            if len(initialLocalTrajectory) > localHorizon:
+                initialLocalTrajectory = initialLocalTrajectory[:localHorizon]
+            else:
+                initialLocalTrajectory.extend([initialLocalTrajectory[-1]] * (localHorizon - len(initialLocalTrajectory)))
+            
         obstacles, maxDistances = robot.getObstacles(
             environment,
             initialLocalTrajectory, 
         )
 
-        #print(Fore.BLUE + f"Len Initial Trajectory: {len(initialTrajectory)} num Obstacles {len(obstacles)} local horizon {localHorizon}" + Style.RESET_ALL)
+        
 
         startTime = time.time()
-        _optimalTrajectory, _, _ = localOptimizer.optimize(
-            initialLocalTrajectory,
-            obstacles, 
-            maxDistances, 
-            _currentTimeStep, 
-            _currentPosition, 
-            _currentTrajectory[-1],
-            0
-        )
-
-        endTime = time.time()
-        print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds with simulated Time Step of {_currentTimeStep}" + Style.RESET_ALL)
-
-
-        state = simulator.simulate(
-            _optimalTrajectory[0].get_state(),
-            _optimalTrajectory[0].u,
-            _currentTimeStep
-        )[:, -1]
-
-        state = OptimizationState(
-            x=state[0:3],
-            v=state[3:6],
-            q=state[6:10],
-            w=state[10:13], 
-        )
-
-        realPath[-1][0].u = _optimalTrajectory[0].u
-        realPath.append((state, _currentTimeStep, _currentTrajectory))
-
-        if np.linalg.norm((state.x - _currentTrajectory[-1].x)) < 0.1:
-            print(Fore.GREEN + "Reached the goal node." + Style.RESET_ALL)
+        try:
+            _optimalTrajectory, _, _ = localOptimizer.optimize(
+                initialLocalTrajectory,
+                obstacles, 
+                maxDistances, 
+                _currentTimeStep, 
+                _currentPosition, 
+                _currentTrajectory[-1],
+                0
+            )
+        except Exception as e:
+            sharedData["localPlanner"].append(
+                {"obstacles": obstacles, "maxDistances": maxDistances, 
+                "trajectory": initialLocalTrajectory, "currentPosition": _currentPosition,
+                "globalPath" : _currentTrajectory, "currentTimeStep": _currentTimeStep, "optimalTrajectory": None , "realTrajectory": realPath} 
+            )
+            print(Fore.RED + f"Local optimization failed: {e}" + Style.RESET_ALL)
             with lock:
                 sharedData["atEnd"] = True
                 sharedData["finalTrajectory"] = realPath
-            break
+            continue
+        if _optimalTrajectory is not None:
+            endTime = time.time()
+            print(Fore.BLUE + f"Local optimization took {endTime - startTime:.3f} seconds with simulated Time Step of {_currentTimeStep}" + Style.RESET_ALL)
 
-        collisionFree = robot.collisionFree(
-            [rp[0] for rp in realPath],
-            environment,
-        )
-        print(Fore.BLUE + f"Collision Found in Real Path: {collisionFree}" + Style.RESET_ALL)
+            state = simulator.simulate(
+                _optimalTrajectory[0].get_state(),
+                _optimalTrajectory[0].u,
+                _currentTimeStep
+            )[:, -1]
+
+            state = OptimizationState(
+                x=state[0:3],
+                v=state[3:6],
+                q=state[6:10],
+                w=state[10:13], 
+            )
+
+            realPath[-1][0].u = _optimalTrajectory[0].u
+            realPath.append((state, _currentTimeStep, _currentTrajectory))
+            sharedData["localPlanner"].append(
+                {"obstacles": obstacles, "maxDistances": maxDistances, 
+                "trajectory": initialLocalTrajectory, "currentPosition": _currentPosition,
+                "globalPath" : _currentTrajectory, "currentTimeStep": _currentTimeStep, "optimalTrajectory": _optimalTrajectory, "realTrajectory": realPath} 
+            )
+
+            if np.linalg.norm((state.x - _currentTrajectory[-1].x)) < 0.1:
+                print(Fore.GREEN + "Reached the goal node." + Style.RESET_ALL)
+                with lock:
+                    sharedData["atEnd"] = True
+                    sharedData["finalTrajectory"] = realPath
+                break
+
+            collisionFree = robot.collisionFree(
+                [rp[0] for rp in realPath],
+                environment,
+            )
+            print(Fore.BLUE + f"Collision Found in Real Path: {collisionFree}" + Style.RESET_ALL)
 
 
-        with lock:
-            sharedData["currentPosition"] = state
+            with lock:
+                sharedData["currentPosition"] = state
 
 
-            #drawLOTWithGOTAndFCP(
-            #    environment, 
-            #    robot, 
-            #    _currentTrajectory,
-            #    _optimalTrajectory,
-            #    realPath
+                #drawLOTWithGOTAndFCP(
+                #    environment, 
+                #    robot, 
+                #    _currentTrajectory,
+                #    _optimalTrajectory,
+                #    realPath
             #)
+
+def generateTransitionTrajectory(
+        currentState : OptimizationState,
+        globalOptimalPath : List[OptimizationState], 
+        dt :  float
+) -> List[OptimizationState]:
+    def generate_transition_trajectory(current_state, target_state, N=10):
+        """
+        Generate a smooth trajectory between two states using cubic interpolation for position,
+        SLERP for orientation, and linear interpolation for velocities.
+
+        Parameters:
+            current_state (OptimizationState): Initial state with (x, v, q, w)
+            target_state (OptimizationState): Final state to reach
+            N (int): Number of steps in the trajectory (including start and end)
+
+        Returns:
+            List[OptimizationState]: List of interpolated states
+        """
+        # Normalize time from 0 to 1
+        ts = np.linspace(0, 1, N)
+
+        # Position and velocity interpolation (cubic)
+        x0, v0 = np.array(current_state.x), np.array(current_state.v)
+        x1, v1 = np.array(target_state.x), np.array(target_state.v)
+
+        a0 = x0
+        a1 = v0
+        a2 = 3*(x1 - x0) - 2*v0 - v1
+        a3 = -2*(x1 - x0) + v0 + v1
+
+        positions = np.array([a0 + a1*t + a2*t**2 + a3*t**3 for t in ts])
+        velocities = np.array([a1 + 2*a2*t + 3*a3*t**2 for t in ts])
+
+        # Orientation SLERP
+        q0 = np.array(current_state.q)
+        q1 = np.array(target_state.q)
+        slerp = Slerp([0, 1], R.from_quat([q0, q1]))
+        quaternions = slerp(ts).as_quat()
+
+        # Angular velocity interpolation (linear)
+        w0 = np.array(current_state.w)
+        w1 = np.array(target_state.w)
+        angular_velocities = np.linspace(w0, w1, N)
+
+        # Build trajectory
+        trajectory = []
+        for i in range(N):
+            traj_state = OptimizationState(
+                x=positions[i],
+                v=velocities[i],
+                q=quaternions[i],
+                w=angular_velocities[i],
+                u=np.zeros(6),
+                i=i
+            )
+            trajectory.append(traj_state)
+
+        return trajectory
+
+    closestPointIndex = min(
+        range(len(globalOptimalPath)),
+        key=lambda i: np.linalg.norm(globalOptimalPath[i].x - currentState.x)
+    )
+    print(Fore.BLUE + f"ClosestPointIndex: {closestPointIndex} vs len{len(globalOptimalPath)}" + Style.RESET_ALL)
+    nextState = globalOptimalPath[closestPointIndex + 1]
+
+    distanceNextState = np.linalg.norm(nextState.x - currentState.x)
+    numStatesPos = int(np.ceil(distanceNextState / (0.1)))
+
+    q_rel = trf.Rotation.from_quat(currentState.q).inv() * trf.Rotation.from_quat(nextState.q)
+    numStatesAttitude = int(np.ceil(np.degrees(q_rel.magnitude()) / 15))
+    numStates = max(numStatesPos, numStatesAttitude)
+
+    print(f"Num States position {numStatesPos}, numStatesAttitude {numStatesAttitude}")
+
+    interpolatedStates = generate_transition_trajectory(
+        currentState, 
+        nextState, 
+        numStates
+    )
+
+    interpolatedStates.extend(globalOptimalPath[closestPointIndex + 1:])
+    finalTrajectory = interpolatedStates.copy()
+
+    if len(interpolatedStates) < 10:
+        interpolatedStates.extend([globalOptimalPath[-1]] * (10 - len(interpolatedStates)))
+    else:
+        interpolatedStates = interpolatedStates[:10]
+
+    for i, state in enumerate(interpolatedStates):
+        print(type(state))
+    return interpolatedStates, finalTrajectory
 
 def drawLOTWithGOTAndFCP(
 
@@ -691,10 +863,35 @@ def main():
         )
     )
 
-    globalOptimizationProcess.start()
-    localOptimizationProcess.start()
-    globalOptimizationProcess.join()
-    localOptimizationProcess.join()
+    try:
+        globalOptimizationProcess.start()
+        localOptimizationProcess.start()
+        globalOptimizationProcess.join()
+        localOptimizationProcess.join()
+    except KeyboardInterrupt:
+        print(Fore.RED + "\nKeyboardInterrupt detected. Terminating processes..." + Style.RESET_ALL)
+        globalOptimizationProcess.terminate()
+        localOptimizationProcess.terminate()
+        globalOptimizationProcess.join()
+        localOptimizationProcess.join()
+    finally:
+        print(Fore.YELLOW + "Saving results to results.pkl..." + Style.RESET_ALL)
+        try:
+            with open(os.path.join(script_dir, "results.pkl"), "wb") as f:
+                pickle.dump(
+                    {
+                        "initialPath": initialPath,
+                        "realPath": sharedData.get("finalTrajectory", []),
+                        "optimalPaths": sharedData.get("allOptimalPaths", [])
+                    },
+                    f,
+                )
+            print(Fore.GREEN + "Results successfully saved." + Style.RESET_ALL)
+        except Exception as e:
+            print(Fore.RED + f"Failed to save results: {e}" + Style.RESET_ALL)
+
+    
+
 
     with open(os.path.join(script_dir, "results.pkl"), "wb") as f:
         pickle.dump(
