@@ -245,7 +245,7 @@ def run_study(args):
 
         for _ in range(int(args.num_runs)):
             # --- Shared parameters (Bi-RRT + Bi-RRT*)
-            stepSize = float(args.step_min)
+            stepSize = float(rng.uniform(0.05, 0.2))
 
             if args.bias_min == args.bias_max:
                 goalBias = float(args.bias_min)
@@ -305,7 +305,7 @@ def run_study(args):
             jobs.append((run, common))
 
     # ---- Execute in parallel ----
-    with Pool(processes=cpu_count()) as pool:
+    with Pool(processes=int(cpu_count() / 2)) as pool:
         results = pool.map(_job, jobs)
 
     # ---- Save ----
@@ -434,7 +434,7 @@ def main():
                    help="Optional: visualize a single run on the complex map.")
 
     # Counts
-    p.add_argument("--num-runs", type=int, default=10,
+    p.add_argument("--num-runs", type=int, default=1000,
                    help="Number of runs per map in study-case.")
 
     # Shared parameter ranges (affect both Bi-RRT and Bi-RRT*)
