@@ -1,155 +1,132 @@
+#!/usr/bin/env python3
 import os
-import sys
-import argparse
-import tempfile
-import time
 import pickle
-from typing import List, Tuple
+from typing import Tuple
 
 import numpy as np
-import trimesh
 import open3d as o3d
-import pyvista as pv
-import matplotlib.pyplot as plt
 
-from MapCreation.ObstacleMotion import SineMotion, NoMotion, NoAttitudeMotion
-from MapCreation.Obstacle import Obstacle
+MAPS_DIR = "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/Maps"
+PCD_DIR  = os.path.join(MAPS_DIR, "pcds")
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(script_dir)
+# ---------------------------
+# Helpers
+# ---------------------------
+def make_state(pos: Tuple[float, float, float],
+               quat_xyzw: Tuple[float, float, float, float]) -> np.ndarray:
+    """13-dim state: [pos(3), vel(3)=0, quat(xyzw)(4), omega(3)=0].
+    Quaternion normalization exactly as you do it."""
+    px, py, pz = pos
+    qx, qy, qz, qw = quat_xyzw
+    state = np.array([px, py, pz, 0.0, 0.0, 0.0, qx, qy, qz, qw, 0.0, 0.0, 0.0], dtype=float)
+    state[6:10] /= np.linalg.norm(state[6:10])  # your style
+    return state
 
-def strToBool(value: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif value.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+def save_map_meta(out_pkl_path: str,
+                  pcd_path: str,
+                  bounds_min: np.ndarray,
+                  bounds_max: np.ndarray,
+                  start_state: np.ndarray,
+                  end_state: np.ndarray,
+                  also_save_start_npy: bool = True) -> None:
+    meta = {
+        "point_cloud_path": os.path.abspath(pcd_path),
+        "start_state": start_state,
+        "end_state": end_state,
+        "bounds_min": bounds_min.astype(float),
+        "bounds_max": bounds_max.astype(float),
+    }
+    os.makedirs(os.path.dirname(out_pkl_path), exist_ok=True)
+    with open(out_pkl_path, "wb") as f:
+        pickle.dump(meta, f, protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"[OK] Saved: {out_pkl_path}")
 
-def tmesh_to_o3d(tmesh: trimesh.Trimesh) -> o3d.geometry.TriangleMesh:
-    with tempfile.NamedTemporaryFile(suffix=".obj", delete=False) as tmp:
-        temp_path = tmp.name
-        tmesh.export(temp_path)
-    o3d_mesh = o3d.io.read_triangle_mesh(temp_path)
-    os.remove(temp_path)
-    return o3d_mesh
+    if also_save_start_npy:
+        npy_path = os.path.join(os.path.dirname(out_pkl_path),
+                                f"{os.path.splitext(os.path.basename(out_pkl_path))[0]}_start_state.npy")
+        np.save(npy_path, start_state)
+        print(f"[OK] Saved start state .npy: {npy_path}")
 
-def sample_tmesh(tmesh: trimesh.Trimesh, number_of_points=200000) -> o3d.geometry.PointCloud:
-    o3d_mesh = tmesh_to_o3d(tmesh)
-    return o3d_mesh.sample_points_poisson_disk(number_of_points=number_of_points)
+def aabb_from_pcd(pcd_path: str) -> tuple[np.ndarray, np.ndarray]:
+    pcd = o3d.io.read_point_cloud(pcd_path)
+    if pcd.is_empty():
+        raise ValueError(f"Empty point cloud: {pcd_path}")
+    aabb = pcd.get_axis_aligned_bounding_box()
+    return np.asarray(aabb.get_min_bound()), np.asarray(aabb.get_max_bound())
 
+# ---------------------------
+# Known maps
+# ---------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Create a 3D mesh and visualize it.")
-    parser.add_argument('--output', type=str, default='environment.pkl', help='Output file name for the mesh')
-    parser.add_argument('--visualize', action='store_true', help='Visualize the mesh using PyVista')
-    parser.add_argument('--glassMaze', type=strToBool, default=False, help='Create a glass maze structure')
-    parser.add_argument('--pcd-size', type=int, default=50000, help='Number of points to sample from the mesh')
-    args = parser.parse_args()
+    os.makedirs(MAPS_DIR, exist_ok=True)
 
-    outputFile = args.output
+    # ---------- simpleMap ----------
+    simple_pcd = os.path.join(PCD_DIR, "simpleMap.pcd")
+    simple_bounds_min = np.array([-5.0, 0.0, -2.5])
+    simple_bounds_max = np.array([ 4.0, 8.0,  2.5])
+    simple_start_pos  = np.array([3.5, 0.5, 2.0])
+    simple_goal_pos   = np.array([3.0, 7.0, 0.0])
+    q_id = np.array([0.0, 0.0, 0.0, 1.0])
+    save_map_meta(
+        out_pkl_path=os.path.join(MAPS_DIR, "simpleMap.pkl"),
+        pcd_path=simple_pcd,
+        bounds_min=simple_bounds_min,
+        bounds_max=simple_bounds_max,
+        start_state=make_state(tuple(simple_start_pos), tuple(q_id)),
+        end_state=make_state(tuple(simple_goal_pos), tuple(q_id)),
+    )
 
-    if args.glassMaze:
-        cube1 = trimesh.creation.box(extents=(1, 0.1, 5))
-        cube2 = trimesh.creation.box(extents=(1, 0.1, 5))
-        cube1.apply_translation([-0.6, 0, 0])
-        cube2.apply_translation([0.6, 0, 0])
-        cube3 = trimesh.creation.box(extents=(0.1, 1, 5))
-        cube4 = trimesh.creation.box(extents=(0.1, 5, 5))
-        cube3.apply_translation([1, 1.9, 0])
-        cube4.apply_translation([1, -1.5, 0])
-        cube5 = trimesh.creation.box(extents=(2.5, 5, 0.1))
-        cube5.apply_translation([0, 1.1, 2.5])
-        cube6 = trimesh.creation.box(extents=(0.1, 5, 1))
-        cube7 = trimesh.creation.box(extents=(0.1, 5, 1))
-        cube6.apply_translation([1, 1.7, 2.7])
-        cube7.apply_translation([1, 1.7, 4.1])
-        dynMesh = cube7
-        finalMesh = cube1 + cube2 + cube3 + cube4 + cube5 + cube6
+    # ---------- middleMap ----------
+    middle_pcd = os.path.join(PCD_DIR, "middleMap.pcd")
+    middle_bounds_min = np.array([1.5, 1.0, 0.0])
+    middle_bounds_max = np.array([4.0, 6.0, 10.0])
+    middle_start_pos  = np.array([2.75, 2.0, 1.0])
+    middle_goal_pos   = np.array([2.75, 2.0, 7.0])
+    middle_q          = np.array([0.0, 0.707, 0.0, 0.707])  # xyzw
+    save_map_meta(
+        out_pkl_path=os.path.join(MAPS_DIR, "middleMap.pkl"),
+        pcd_path=middle_pcd,
+        bounds_min=middle_bounds_min,
+        bounds_max=middle_bounds_max,
+        start_state=make_state(tuple(middle_start_pos), tuple(middle_q)),
+        end_state=make_state(tuple(middle_goal_pos), tuple(middle_q)),
+    )
+
+    # ---------- complexMap ----------
+    complex_pcd = os.path.join(PCD_DIR, "complexMap.pcd")
+    complex_bounds_min = np.array([0.0, 3.0, 0.0])
+    complex_bounds_max = np.array([3.0, 6.5, 7.0])
+    complex_start_pos  = np.array([0.5, 3.5, 1.0])
+    complex_goal_pos   = np.array([0.5, 5.0, 6.0])
+    save_map_meta(
+        out_pkl_path=os.path.join(MAPS_DIR, "complexMap.pkl"),
+        pcd_path=complex_pcd,
+        bounds_min=complex_bounds_min,
+        bounds_max=complex_bounds_max,
+        start_state=make_state(tuple(complex_start_pos), tuple(q_id)),
+        end_state=make_state(tuple(complex_goal_pos), tuple(q_id)),
+    )
+
+    # ---------- DoubleSphere (using your params) ----------
+    ds_pcd = os.path.join(PCD_DIR, "DoubleSphere.pcd")
+    if os.path.exists(ds_pcd):
+        ds_min, ds_max = aabb_from_pcd(ds_pcd)  # bounds from PCD AABB
+        ds_min = np.array([-4, -3, 2])
+        ds_max = np.array([14, 5, 7])
+        ds_start_pos   = np.array([-3.0, 3.0, 5.0])   # from your MATLAB (center)
+        ds_end_pos     = np.array([12.0, 0.0, 5.0])   # from your MATLAB (center)
+        save_map_meta(
+            out_pkl_path=os.path.join(MAPS_DIR, "DoubleSphere.pkl"),
+            pcd_path=ds_pcd,
+            bounds_min=ds_min,
+            bounds_max=ds_max,
+            start_state=make_state(tuple(ds_start_pos), tuple(q_id)),
+            end_state=make_state(tuple(ds_end_pos),   tuple(q_id)),
+        )
     else:
-        cube1 = trimesh.creation.box(extents=(0.5, 10, 10))
-        cube2 = trimesh.creation.box(extents=(0.75, 0.6, 0.3))
-        cube2.apply_translation([0.0, 3, 3])
-        cube8 = trimesh.creation.box(extents=(2., 1.00, 1.00))
-        cube8.apply_translation([1.0, 3, 3])
-        cube9 = trimesh.creation.box(extents=(2.00, 0.6, 0.3))
-        cube9.apply_translation([1.0, 3, 3])
-        cube8 = cube8.difference(cube9)
-        cube1 = cube1.difference(cube2)
-        cube4 = trimesh.creation.box(extents=(1.5, 10, 0.25))
-        cube4.apply_translation([-0.50, 0, 5])
-        cube5 = trimesh.creation.box(extents=(1.5, 9.5, 0.25))
-        cube5.apply_translation([-0.50, -0.5, 0])
-        cube6 = trimesh.creation.box(extents=(1.5, 0.25, 10))
-        cube6.apply_translation([-0.50, 5, 0])
-        cube7 = trimesh.creation.box(extents=(1.5, 10, 0.25))
-        cube7.apply_translation([-0.50, 0, -5])
-        dynMesh = cube7
-        finalMesh = cube1 + cube4 + cube5 + cube6 + cube8
+        print(f"[WARN] DoubleSphere PCD not found at {ds_pcd}; skipping.")
 
-    # Create static obstacle
-    static_obstacle = Obstacle(
-        motion=NoMotion(),
-        attitude=NoAttitudeMotion(),
-        pcd=sample_tmesh(finalMesh, number_of_points=args.pcd_size),
-        mesh=finalMesh
-    )
-
-    # Create dynamic obstacle
-    dyn_obstacle = Obstacle(
-        motion=SineMotion(),
-        attitude=NoAttitudeMotion(),
-        pcd=sample_tmesh(dynMesh, number_of_points=50000),
-        mesh=dynMesh
-    )
-
-    # Save all obstacles
-    with open(outputFile, "wb") as f:
-        pickle.dump({
-            "obstacles": [static_obstacle.to_dict(), dyn_obstacle.to_dict()]
-        }, f)
-
-
-    print(f"Saved environment to {outputFile}")
-
-    if args.visualize:
-        pv_ = pv.Plotter()
-        robot = pv.Cube(bounds=(-0.45/2, 0.45/2, -0.45/2, 0.45/2, -0.12/2, 0.12/2))
-        transform = np.eye(4)
-        transform[:3, :3] = np.eye(3)  # Identity rotation
-        transform[:3, 3] = np.array([0.0, -1.0, 0.0])  # Translation to center the cube
-        robot.transform(transform)
-        pv_.add_mesh(robot, color='green', show_edges=True)
-
-        robot = robot.copy()
-        transform = np.eye(4)
-        transform[:3, :3] = np.eye(3)  # Identity rotation
-        transform[:3, 3] = np.array([0.0, 2.0, 4.0])  # Translation to center the cube
-        robot.transform(transform)
-        pv_.add_mesh(robot, color='green', show_edges=True)
-
-        static_cloud = pv.PolyData(np.asarray(static_obstacle.getPcd(0).points))
-        pv_.add_mesh(static_cloud, color='blue', point_size=2, render_points_as_spheres=True)
-
-        dyn_cloud = pv.PolyData(np.asarray(dyn_obstacle.getPcd(0).points))
-        pv_.add_mesh(dyn_cloud, color='red', point_size=3, render_points_as_spheres=True)
-
-        pv_.add_axes()
-        pv_.show_grid()
-
-        n_frames = 100
-        duration = 5.0
-        delay = duration / n_frames
-
-        pv_.open_gif("dynamic_obstacle.gif")
-        for frame in range(n_frames):
-            t = frame * delay
-            dyn_cloud.points = np.asarray(dyn_obstacle.getPcd(t).points)
-            pv_.write_frame()
-            time.sleep(delay)
-
-        pv_.close()
+    print("\nAll done.")
 
 if __name__ == "__main__":
     main()

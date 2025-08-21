@@ -85,12 +85,13 @@ class GlobalOptimalPlanner:
                 for v in self.robot.getVertices():
                     opti.subject_to(
                         obs.normal.reshape((1, 3)) @ (R_q.as_matrix() @ v + pos) >=
-                        obs.normal.reshape((1, 3)) @ obs.closestPointObstacle + obs.safetyMargin
+                        obs.normal.reshape((1, 3)) @ obs.closestPointObstacle #+ obs.safetyMargin
                     )
                 
                 #opti.subject_to(
                 #    ca.sumsqr(x[0:3, i] - initialPath[i].x) <= maxDistance**2
                 #)
+                print(f"{maxDistance}")
     
         opti.subject_to(opti.bounded(-3, u, 3))
         opti.subject_to(opti.bounded(self.stateMinValues, x, self.stateMaxValues))
@@ -99,7 +100,7 @@ class GlobalOptimalPlanner:
             opti.subject_to(ca.sumsqr(x[6:10]) == 1)
         
         cost = 0
-        cost += 1000 * _dt
+        cost += 1000 * _dt**2 
 #        for i in range(N):
 #            cost += u[:, i].T @ 0.1 @ u[:, i]
 

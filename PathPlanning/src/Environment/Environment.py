@@ -4,164 +4,131 @@ import scipy.spatial.transform as trf
 import pyvista as pv
 import time
 import coal
+from typing import Optional, Any
 
 
 class EnvironmentHandler:
-    """Class to handle the environment, which is a voxel grid built from a point
-        cloud.
-    This class is used to convert a point cloud into a mesh that is compatible 
-        with coal for flexible collision detection.
     """
-    
-    def __init__(self, pcd, voxel_size=0.1):
-        """Receives a point cloud and a voxel size, and builds a voxel grid that
-          is compatible with fcl for colision detection.
+    Build a voxel mesh and COAL BVH from either:
+      - an Open3D PointCloud (pcd=...)
+      - a Map instance with getPointCloud() (map_obj=...)
+    """
 
+    def __init__(self,
+                 pcd: Optional[o3d.geometry.PointCloud] = None,
+                 voxel_size: float = 0.1,
+                 map_obj: Optional[Any] = None):
+        """
         Args:
-            pcd (open3d.geometry.PointCloud): point cloud to be converted to 
-                voxel grid
-            voxel_size (float): size of the voxels in the grid
-
-        Returns:
-            None
+            pcd: Open3D point cloud.
+            voxel_size: size of voxels.
+            map_obj: your Map instance (must provide getPointCloud(); optional
+                     getBoundsMin/getBoundsMax/getStartState/getEndState).
         """
         self.voxel_size = voxel_size
-        self.pcd = pcd
+        self.map = map_obj  # keep a reference if provided
+
+        # --- Resolve input point cloud ---
+        if map_obj is not None:
+            if not hasattr(map_obj, "getPointCloud"):
+                raise TypeError("map_obj must provide getPointCloud().")
+            self.pcd = map_obj.getPointCloud()
+            if not isinstance(self.pcd, o3d.geometry.PointCloud):
+                raise TypeError("Map.getPointCloud() must return an Open3D PointCloud.")
+            # Optional metadata from Map
+            self.boundsMin = getattr(map_obj, "getBoundsMin", lambda: None)()
+            self.boundsMax = getattr(map_obj, "getBoundsMax", lambda: None)()
+            self.startState = getattr(map_obj, "getStartState", lambda: None)()
+            self.endState   = getattr(map_obj, "getEndState",   lambda: None)()
+        else:
+            if pcd is None:
+                raise ValueError("Provide either map_obj or pcd.")
+            self.pcd = pcd
+            self.boundsMin = None
+            self.boundsMax = None
+            self.startState = None
+            self.endState = None
+
+        # Ensure contiguous Nx3 float array in the PointCloud
         pts = np.asarray(self.pcd.points)
-        #pts -= pts.min(axis=0)
-        self.pcd.points = o3d.utility.Vector3dVector(pts)
+        self.pcd.points = o3d.utility.Vector3dVector(np.ascontiguousarray(pts, dtype=float))
 
-        self.voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(
-            self.pcd, voxel_size=self.voxel_size
-        )
-        (
-            self.voxel_mesh,
-            self.vertices,
-            self.quads,
-            self.triangleIndex,
-            self.triangleVertex,
-            self.timeTaken,
-        ) = self._fast_voxel_mesh(self.voxel_grid)
+        # --- Build VoxelGrid and fast voxel mesh ---
+        self.voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(self.pcd, voxel_size=self.voxel_size)
+        (self.voxel_mesh,
+         self.vertices,
+         self.quads,
+         self.triangleIndex,
+         self.triangleVertex,
+         self.timeTaken) = self._fast_voxel_mesh(self.voxel_grid)
 
+        # --- Build COAL BVH mesh ---
         self._build_coal_mesh(self.triangleIndex, self.triangleVertex)
 
-    def _fast_voxel_mesh(self, voxel_grid):
-        """Builds a Voxel mesh from a voxel grid. This function is fully
-            vectorized and optimized for speed.
-        This function also considers the voxels to be all the same size, as does
-             not join voxels that are adjacent to each other.
+    @classmethod
+    def from_map(cls, map_obj: Any, voxel_size: float = 0.1) -> "EnvironmentHandler":
+        """Convenience constructor when you already have a Map instance."""
+        return cls(pcd=None, voxel_size=voxel_size, map_obj=map_obj)
 
-        Parameters:
-            voxel_grid (o3d.geometry.VoxelGrid): The voxel grid to convert to a 
-              mesh.
-        
-        Returns:
-            visualization mesh (pyvista.PolyData): The mesh representation of 
-                the voxel grid.
-            points (np.ndarray): The centers of the voxels.
-            quads (np.ndarray): The quad faces of the voxels.
-            triangleIndices (np.ndarray): The indices of the triangles in the 
-                mesh.
-            triangleVertex (np.ndarray): The vertices of the triangles in the 
-                mesh.
-        """
+    def _fast_voxel_mesh(self, voxel_grid):
+        """Vectorized voxel-mesh construction from an Open3D VoxelGrid."""
         timeStart = time.time()
 
         voxel_size = voxel_grid.voxel_size
         origin = voxel_grid.origin
         voxels = voxel_grid.get_voxels()
 
-        # Get centers
-        centers = (
-            np.array([v.grid_index for v in voxels]) * voxel_size
-            + origin
-            + voxel_size / 2
-        )
-        min_bounds = centers.min(axis=0)
-        #centers -= min_bounds
+        centers = (np.array([v.grid_index for v in voxels]) * voxel_size
+                   + origin + voxel_size / 2.0)
 
-        # Cube corners: (8, 3)
-        cube = (
-            np.array(
-                [
-                    [0, 0, 0],
-                    [1, 0, 0],
-                    [1, 1, 0],
-                    [0, 1, 0],
-                    [0, 0, 1],
-                    [1, 0, 1],
-                    [1, 1, 1],
-                    [0, 1, 1],
-                ]
-            )
-            - 0.5
-        ) * voxel_size
+        cube = (np.array([
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ]) - 0.5) * voxel_size
 
-        # Faces template: (6, 4)
-        faces_template = np.array(
-            [
-                [0, 1, 2, 3],
-                [4, 5, 6, 7],
-                [0, 1, 5, 4],
-                [2, 3, 7, 6],
-                [1, 2, 6, 5],
-                [0, 3, 7, 4],
-            ]
-        )
+        faces_template = np.array([
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [1, 2, 6, 5],
+            [0, 3, 7, 4],
+        ])
 
-        # Vectorized vertices: repeat centers, tile cube
         N = centers.shape[0]
-        points = np.repeat(centers, 8, axis=0) + np.tile(
-            cube, (N, 1)
-        )  # (N*8, 3)
+        points = np.repeat(centers, 8, axis=0) + np.tile(cube, (N, 1))  # (N*8, 3)
 
-        # Vectorized faces: replicate faces_template with correct offsets
-        offsets = (np.arange(N) * 8).reshape(-1, 1, 1)  # (N, 1, 1)
-        faces = faces_template[None, :, :] + offsets  # (N, 6, 4)
-        quads = faces.reshape(-1, 4)  # (N*6, 4)
+        offsets = (np.arange(N) * 8).reshape(-1, 1, 1)
+        faces = faces_template[None, :, :] + offsets                   # (N, 6, 4)
+        quads = faces.reshape(-1, 4).astype(np.int64)                  # (N*6, 4)
 
-        # Convert quads to triangle list for PolyData: each quad → 2 triangles
-        tris = np.empty(
-            (len(quads) * 2, 4), dtype=np.int32
-        )  # Each face: [3, i, j, k]
-
-        tris[0::2, 0] = 3
-        tris[0::2, 1:] = quads[:, [0, 1, 2]]
-
-        tris[1::2, 0] = 3
-        tris[1::2, 1:] = quads[:, [0, 2, 3]]
-
+        tris = np.empty((len(quads) * 2, 4), dtype=np.int32)
+        tris[0::2, 0] = 3; tris[0::2, 1:] = quads[:, [0, 1, 2]]
+        tris[1::2, 0] = 3; tris[1::2, 1:] = quads[:, [0, 2, 3]]
         tris_flat = tris.flatten()
 
         triangleIndices = np.empty((len(quads) * 2, 3), dtype=np.int64)
         triangleIndices[0::2] = quads[:, [0, 1, 2]]
         triangleIndices[1::2] = quads[:, [0, 2, 3]]
+
         timeEnd = time.time()
-        # Return PyVista mesh + raw data
         return (
             pv.PolyData(points, tris_flat),
             points,
             quads,
             triangleIndices,
-            points,
+            points,                   # vertices array used as triangleVertex
             timeEnd - timeStart,
         )
 
-    def _build_coal_mesh(
-        self, triangleIndex: np.ndarray, triangleVertex: np.ndarray
-    ):
-        """Builds the coal mesh for the environment from the information related
-             to the voxel grid
-
-        Parameters:
-            triangleIndex (np.ndarray): Nx3 Array where each row represents a 
-                triangle, and each column represents a vertex index
-            triangleVertex (np.ndarray): Nx3 Array where each row represents a 
-                vertex in 3D space
-
-        Returns:
-            None
-        """
+    def _build_coal_mesh(self, triangleIndex: np.ndarray, triangleVertex: np.ndarray):
+        """Create COAL BVH from triangle data."""
         mesh = coal.BVHModelOBBRSS()
         mesh.beginModel(triangleIndex.shape[0], triangleVertex.shape[0])
         mesh.addTriangles(triangleIndex)
@@ -169,99 +136,25 @@ class EnvironmentHandler:
         mesh.endModel()
         self.envMesh = mesh
 
-    def buildEllipsoid(
-        self, ellipsoid_radii: np.ndarray = np.array([0.24, 0.24, 0.10])
-    ):
-        """Creates an ellipsoid to encompass the robot for the collision
-            detection.
-
-        Args:
-            ellipsoid_radii (np.ndarray): radii of the ellipsoid in x, y, z 
-                directions
-
-        Returns:
-            fcl.CollisionObject: fcl collision object representing the ellipsoid
-
-        Raises:
-            TypeError: if ellipsoid_radii is not a numpy array
-            ValueError: if ellipsoid_radii is not a 1D array of length 3
-        """
-        if not isinstance(ellipsoid_radii, np.ndarray):
-            raise TypeError("Ellipsoid radii must be a numpy array.")
-
-        if ellipsoid_radii.shape != (3,):
-            raise ValueError("Ellipsoid radii must be a 1D array of length 3.")
-
+    def buildEllipsoid(self, ellipsoid_radii: np.ndarray = np.array([0.24, 0.24, 0.10])):
+        if not isinstance(ellipsoid_radii, np.ndarray) or ellipsoid_radii.shape != (3,):
+            raise ValueError("ellipsoid_radii must be a numpy array with shape (3,).")
         return coal.Ellipsoid(ellipsoid_radii)
 
     def buildBox(self, box_size: np.ndarray = np.array([0.45, 0.45, 0.12])):
-        """Creates a box to encompass an object for the collision detection.
-
-        Parameters:
-            box_size (np.ndarray): size of the box in x, y, z directions
-
-        Returns:
-            fcl.CollisionObject: fcl collision object representing the box
-        """
-        if not isinstance(box_size, np.ndarray):
-            raise TypeError("Box size must be a numpy array.")
-
-        if box_size.shape != (3,):
-            raise ValueError("Box size must be a 1D array of length 3.")
-
+        if not isinstance(box_size, np.ndarray) or box_size.shape != (3,):
+            raise ValueError("box_size must be a numpy array with shape (3,).")
         return coal.Box(box_size)
 
     def buildSinglePoint(self):
-        """Creates a single point to encompass the robot for the collision
-            detection.
-
-        Args:
-            None
-
-        Returns:
-            fcl.CollisionGeometry: fcl collision object representing the point
-
-        Raises:
-            None
-        """
         return coal.Sphere(0.001)
 
-    def collide(
-        self,
-        obj1: coal.CollisionObject,
-        p1: np.ndarray = np.zeros((3,)),
-        q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0]),
-    ):  # type: ignore
-        """Collision between two object and returns the result information.
-
-        The second coal object is the environment mesh that was build from the  
-            point cloud passed to the Environment Handler
-
-        Parameters:
-            obj1 (coal.CollisionObject): first coal object
-            p1 (np.ndarray): position of the first object
-            q1 (np.ndarray): quaternion of the first object
-
-        Returns:
-            isCollision (bool): True if there is a collision, False otherwise
-            depth (float): depth of the collision if there is a collision, 
-                None otherwise
-            nearestPoint1 (np.ndarray) : nearest point on the object if there 
-                is a collision, None otherwise
-            nearestPoint2 (np.ndarray) : nearest point on the environment mesh 
-                if there is a collision, None otherwise
-            normal (np.ndarray): normal of the collision if there is a 
-                collision, None otherwise
-
-        Raises:
-            TypeError: if obj1 is not a coal.CollisionObject, p1 is not a numpy 
-                array of shape (3, 1), or q1 is not a scipy Rotation object
-            ValueError: if the two objects are in collision
-
-        """
+    def collide(self,
+                obj1: coal.CollisionObject,
+                p1: np.ndarray = np.zeros((3,)),
+                q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0])):
         if not isinstance(p1, np.ndarray) or p1.shape != (3,):
-            raise TypeError("Position must be a numpy array of shape (3).")
-
+            raise TypeError("Position must be a numpy array of shape (3,).")
         if not isinstance(q1, trf.Rotation):
             raise TypeError("Quaternion must be a scipy Rotation object.")
 
@@ -285,50 +178,19 @@ class EnvironmentHandler:
             nearestPoint2 = contact.getNearestPoint2()
             normal = contact.normal
             colRes.clear()
-            return (True, depth, nearestPoint1, nearestPoint2, normal)
+            return True, depth, nearestPoint1, nearestPoint2, normal
         else:
             colRes.clear()
-            return (False, None, None, None, None)
+            return False, None, None, None, None
 
-    def distance(
-        self,
-        obj1: coal.CollisionGeometry,
-        p1: np.ndarray = np.zeros((3,)),
-        q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0]),
-    ):
-        """Compute the distance between two objects that are not in collision.
-
-        The second coal object is the environment mesh that was built from the
-        point cloud passed to the Environment Handler.
-
-        Parameters:
-            obj1 (coal.CollisionObject): First coal object.
-            p1 (np.ndarray): Position of the first object.
-            q1 (np.ndarray): Quaternion of the first object.
-
-        Returns:
-            minDistance (float): Minimum distance between the two objects.
-            pt1 (np.ndarray): Nearest point on the first object.
-            pt2 (np.ndarray): Nearest point on the second object.
-
-        Raises:
-            ValueError: If the two objects are in collision.
-            TypeError: If obj1 is not a coal.CollisionObject, p1 is not a numpy
-                array of shape (3, 1), or q1 is not a scipy Rotation object.
-        """
+    def distance(self,
+                 obj1: coal.CollisionGeometry,
+                 p1: np.ndarray = np.zeros((3,)),
+                 q1: trf.Rotation = trf.Rotation.from_euler("xyz", [0, 0, 0])):
         if not isinstance(p1, np.ndarray) or p1.shape != (3,):
             raise TypeError("Position must be a numpy array of shape (3,).")
-
         if not isinstance(q1, trf.Rotation):
             raise TypeError("Quaternion must be a scipy Rotation object.")
-
-        isCollision, depth, _, _, _ = self.collide(obj1, p1, q1)
-
-        #if isCollision:
-        #    print(f"Depth {depth} between objects, cannot compute distance.")
-        #    raise ValueError(
-        #        "Objects are in collision, cannot compute distance."
-        #    )
 
         T1 = coal.Transform3s()
         T1.setTranslation(p1)
@@ -350,25 +212,8 @@ class EnvironmentHandler:
         return minDistance, pt1, pt2, normal
 
     def visualizeMap(self, plotter: pv.Plotter):
-        """Visualizes the voxel grid and the point cloud.
-
-        Args:
-            plotter (pv.Plotter): PyVista plotter object to visualize the voxel
-                grid
-
-        Returns:
-            None
-        """
         plotter.add_mesh(self.voxel_mesh, color="white", show_edges=True)
         return plotter
 
     def getMesh(self):
-        """Returns the voxel mesh of the environment.
-
-        Args:
-            None
-
-        Returns:
-            pv.PolyData: voxel mesh of the environment
-        """
         return self.voxel_mesh

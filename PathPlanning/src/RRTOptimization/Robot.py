@@ -375,7 +375,7 @@ class Robot(Model):
                 )
                 _minDistance.append(md)
                 obstacles.append(
-                    Obstacle(pt2, (pt1 - pt2) / np.linalg.norm(pt1 - pt2), md, i, pt1)
+                    Obstacle(pt2, (pt1 - pt2) / -np.linalg.norm(pt1 - pt2), md, i, pt1)
                 )
             
             maxDistance.append(max(_minDistance))
