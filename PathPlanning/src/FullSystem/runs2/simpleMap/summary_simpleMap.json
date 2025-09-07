@@ -1,0 +1,2526 @@
+{
+  "map": "simpleMap.pkl",
+  "map_name": "simpleMap",
+  "runs_per_map": 100,
+  "rrt_params": {
+    "iterations": 100000,
+    "step": 0.2,
+    "goal_bias": 0.05
+  },
+  "opt_limits": {
+    "max_iters": 100,
+    "max_consecutive_collisions": 5
+  },
+  "constraint_modes": [
+    {
+      "mode_label": "single",
+      "use_avoidance_constraint": false
+    },
+    {
+      "mode_label": "avoidance",
+      "use_avoidance_constraint": true
+    }
+  ],
+  "runs": [
+    {
+      "trial_idx": 0,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05530738830566406,
+        "prune_time": 0.011477231979370117,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_000__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 6,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_000__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 1,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08638834953308105,
+        "prune_time": 0.015969038009643555,
+        "pruned_len": 110
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_001__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_001__avoidance.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        }
+      }
+    },
+    {
+      "trial_idx": 2,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0550692081451416,
+        "prune_time": 0.014705896377563477,
+        "pruned_len": 123
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_002__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 9,
+          "collision_iters": 7,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_002__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 1,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 3,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08844590187072754,
+        "prune_time": 0.007101535797119141,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_003__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 2,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_003__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 4,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06023907661437988,
+        "prune_time": 0.013995885848999023,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_004__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_004__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 12,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 5,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.013711214065551758,
+        "prune_time": 0.008772850036621094,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_005__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_005__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 6,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.032425642013549805,
+        "prune_time": 0.013359546661376953,
+        "pruned_len": 106
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_006__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_006__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 7,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08462738990783691,
+        "prune_time": 0.010652542114257812,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_007__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_007__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 8,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04457592964172363,
+        "prune_time": 0.016646146774291992,
+        "pruned_len": 123
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_008__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_008__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 9,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.026799917221069336,
+        "prune_time": 0.011345624923706055,
+        "pruned_len": 111
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_009__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_009__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 10,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.1183779239654541,
+        "prune_time": 0.017402172088623047,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_010__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_010__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 11,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.019092321395874023,
+        "prune_time": 0.017749309539794922,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_011__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_011__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 12,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.020319461822509766,
+        "prune_time": 0.011694192886352539,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_012__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_012__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 12,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 13,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.14289355278015137,
+        "prune_time": 0.01745748519897461,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_013__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_013__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 14,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0528109073638916,
+        "prune_time": 0.012651920318603516,
+        "pruned_len": 122
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_014__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_014__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 15,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07376837730407715,
+        "prune_time": 0.022992849349975586,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_015__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_015__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 16,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04101872444152832,
+        "prune_time": 0.016657590866088867,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_016__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_016__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 17,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06801867485046387,
+        "prune_time": 0.012158393859863281,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_017__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 6,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_017__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 18,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.12050676345825195,
+        "prune_time": 0.01047062873840332,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_018__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_018__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 19,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.022363901138305664,
+        "prune_time": 0.019557952880859375,
+        "pruned_len": 123
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_019__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_019__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 20,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03466439247131348,
+        "prune_time": 0.011461973190307617,
+        "pruned_len": 111
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_020__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_020__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 21,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.039076805114746094,
+        "prune_time": 0.011374235153198242,
+        "pruned_len": 126
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_021__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_021__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 22,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06261992454528809,
+        "prune_time": 0.012062549591064453,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_022__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_022__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 1,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 23,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0771949291229248,
+        "prune_time": 0.013391256332397461,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_023__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_023__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 24,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06482148170471191,
+        "prune_time": 0.011498451232910156,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_024__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_024__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 25,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.027634143829345703,
+        "prune_time": 0.01842951774597168,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_025__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_025__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 26,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03367972373962402,
+        "prune_time": 0.015303373336791992,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_026__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_026__avoidance.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        }
+      }
+    },
+    {
+      "trial_idx": 27,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.02381110191345215,
+        "prune_time": 0.020604372024536133,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_027__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_027__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 28,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.09166383743286133,
+        "prune_time": 0.02647566795349121,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_028__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_028__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 29,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06204342842102051,
+        "prune_time": 0.01837897300720215,
+        "pruned_len": 127
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_029__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_029__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 30,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03261542320251465,
+        "prune_time": 0.01233363151550293,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_030__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_030__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 31,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.10798764228820801,
+        "prune_time": 0.014036893844604492,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_031__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_031__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 32,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04339146614074707,
+        "prune_time": 0.016462326049804688,
+        "pruned_len": 116
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_032__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_032__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 33,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.2432243824005127,
+        "prune_time": 0.046915531158447266,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_033__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_033__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 16,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 34,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03178215026855469,
+        "prune_time": 0.015048742294311523,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_034__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_034__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 35,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0335993766784668,
+        "prune_time": 0.013227462768554688,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_035__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_035__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 36,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.028352737426757812,
+        "prune_time": 0.019408464431762695,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_036__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_036__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 37,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08968091011047363,
+        "prune_time": 0.0179288387298584,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_037__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 4,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_037__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 11,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 38,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04611802101135254,
+        "prune_time": 0.015344858169555664,
+        "pruned_len": 116
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_038__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_038__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 39,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07531976699829102,
+        "prune_time": 0.015179157257080078,
+        "pruned_len": 129
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_039__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_039__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 40,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.009959697723388672,
+        "prune_time": 0.01770186424255371,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_040__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_040__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 41,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06062006950378418,
+        "prune_time": 0.017247915267944336,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_041__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 4,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_041__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 42,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03601193428039551,
+        "prune_time": 0.009681940078735352,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_042__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_042__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 43,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04040384292602539,
+        "prune_time": 0.012565135955810547,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_043__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_043__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 44,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.048673391342163086,
+        "prune_time": 0.015548467636108398,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_044__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_044__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 45,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05773639678955078,
+        "prune_time": 0.012470483779907227,
+        "pruned_len": 116
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_045__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_045__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 46,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03601717948913574,
+        "prune_time": 0.01126241683959961,
+        "pruned_len": 108
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_046__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_046__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 47,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.024377107620239258,
+        "prune_time": 0.020951271057128906,
+        "pruned_len": 122
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_047__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_047__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 48,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07050561904907227,
+        "prune_time": 0.007447242736816406,
+        "pruned_len": 111
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_048__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 9,
+          "collision_iters": 8,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_048__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 49,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05645942687988281,
+        "prune_time": 0.015084028244018555,
+        "pruned_len": 110
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_049__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_049__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 50,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.028653860092163086,
+        "prune_time": 0.01777958869934082,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_050__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 2,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_050__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 51,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0825955867767334,
+        "prune_time": 0.011798620223999023,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_051__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_051__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 52,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04492831230163574,
+        "prune_time": 0.02516317367553711,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_052__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_052__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 53,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03127455711364746,
+        "prune_time": 0.013231515884399414,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_053__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_053__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 54,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03794074058532715,
+        "prune_time": 0.01381063461303711,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_054__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_054__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 55,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.028189659118652344,
+        "prune_time": 0.011068105697631836,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_055__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_055__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 56,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03339743614196777,
+        "prune_time": 0.01786065101623535,
+        "pruned_len": 129
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_056__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_056__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 57,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.17000770568847656,
+        "prune_time": 0.017017364501953125,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_057__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_057__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 58,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.016602277755737305,
+        "prune_time": 0.020098447799682617,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_058__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_058__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 59,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.10204029083251953,
+        "prune_time": 0.013403177261352539,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_059__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_059__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 60,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03367424011230469,
+        "prune_time": 0.015765666961669922,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_060__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 7,
+          "collision_iters": 6,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_060__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 61,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07214736938476562,
+        "prune_time": 0.02713751792907715,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_061__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_061__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 62,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.12937068939208984,
+        "prune_time": 0.014708518981933594,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_062__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_062__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 63,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05954337120056152,
+        "prune_time": 0.014689445495605469,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_063__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_063__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 64,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04946398735046387,
+        "prune_time": 0.010365009307861328,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_064__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_064__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 11,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 65,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.02542853355407715,
+        "prune_time": 0.012492656707763672,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_065__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_065__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 66,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.09842300415039062,
+        "prune_time": 0.01586461067199707,
+        "pruned_len": 110
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_066__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 5,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_066__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 67,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05625510215759277,
+        "prune_time": 0.01747584342956543,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_067__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_067__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 68,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.053850412368774414,
+        "prune_time": 0.012536287307739258,
+        "pruned_len": 126
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_068__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_068__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 69,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.14063692092895508,
+        "prune_time": 0.01942896842956543,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_069__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_069__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 10,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 70,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03339886665344238,
+        "prune_time": 0.029267549514770508,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_070__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_070__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 71,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08263587951660156,
+        "prune_time": 0.02221512794494629,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_071__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_071__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 72,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.023414134979248047,
+        "prune_time": 0.019762039184570312,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_072__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 6,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_072__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 73,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.053702592849731445,
+        "prune_time": 0.012369871139526367,
+        "pruned_len": 116
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_073__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_073__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 74,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0850224494934082,
+        "prune_time": 0.016472816467285156,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_074__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_074__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 75,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.026607275009155273,
+        "prune_time": 0.02261042594909668,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_075__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_075__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 76,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06921958923339844,
+        "prune_time": 0.02324819564819336,
+        "pruned_len": 126
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_076__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_076__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 77,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.016985177993774414,
+        "prune_time": 0.016376495361328125,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_077__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_077__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 10,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 78,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.11479020118713379,
+        "prune_time": 0.013893365859985352,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_078__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_078__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 79,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04274177551269531,
+        "prune_time": 0.01193547248840332,
+        "pruned_len": 113
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_079__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 10,
+          "collision_iters": 6,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_079__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 80,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.03629255294799805,
+        "prune_time": 0.014023303985595703,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_080__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_080__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 81,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.060719966888427734,
+        "prune_time": 0.008604764938354492,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_081__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_081__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 82,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.057494401931762695,
+        "prune_time": 0.02015233039855957,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_082__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_082__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 83,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04120039939880371,
+        "prune_time": 0.029335737228393555,
+        "pruned_len": 103
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_083__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_083__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 8,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 84,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.08317971229553223,
+        "prune_time": 0.013896942138671875,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_084__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_084__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 85,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07758164405822754,
+        "prune_time": 0.011691093444824219,
+        "pruned_len": 122
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_085__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_085__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 86,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.013431787490844727,
+        "prune_time": 0.025836706161499023,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_086__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 4,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_086__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 87,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.21208858489990234,
+        "prune_time": 0.03407621383666992,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_087__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 28,
+          "collision_iters": 12,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_087__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 88,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.029665470123291016,
+        "prune_time": 0.01064443588256836,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_088__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 7,
+          "collision_iters": 6,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_088__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 89,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.05460023880004883,
+        "prune_time": 0.011992216110229492,
+        "pruned_len": 114
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_089__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_089__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 1,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 90,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.10726809501647949,
+        "prune_time": 0.02471327781677246,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_090__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_090__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 91,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.10344958305358887,
+        "prune_time": 0.017235517501831055,
+        "pruned_len": 120
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_091__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_091__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 92,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.10422205924987793,
+        "prune_time": 0.010916709899902344,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_092__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_092__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 93,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04777383804321289,
+        "prune_time": 0.015300989151000977,
+        "pruned_len": 115
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_093__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_093__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 94,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.0493319034576416,
+        "prune_time": 0.014543294906616211,
+        "pruned_len": 117
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_094__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_094__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 95,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.07042074203491211,
+        "prune_time": 0.021231651306152344,
+        "pruned_len": 119
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_095__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 5,
+          "collision_iters": 1,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_095__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 1,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 96,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06715989112854004,
+        "prune_time": 0.025427579879760742,
+        "pruned_len": 118
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_096__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 2,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_096__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 97,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.008766651153564453,
+        "prune_time": 0.010305643081665039,
+        "pruned_len": 110
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_097__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 6,
+          "collision_iters": 3,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_097__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 4,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 98,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.04301643371582031,
+        "prune_time": 0.01316690444946289,
+        "pruned_len": 121
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_098__single.pkl",
+          "stop_reason": "consecutive_collision_limit(5)",
+          "iters_run": 5,
+          "collision_iters": 5,
+          "success": false
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_098__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 9,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    },
+    {
+      "trial_idx": 99,
+      "status": "ok",
+      "birrt": {
+        "wall_time": 0.06947898864746094,
+        "prune_time": 0.012803077697753906,
+        "pruned_len": 112
+      },
+      "modes": {
+        "single": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_099__single.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 3,
+          "collision_iters": 0,
+          "success": true
+        },
+        "avoidance": {
+          "pickle": "/home/andret/MEEC/Thesis/Code/MISC/PathPlanning/src/FullSystem/runs2/simpleMap/run_099__avoidance.pkl",
+          "stop_reason": "stabilized_dt<1%",
+          "iters_run": 7,
+          "collision_iters": 0,
+          "success": true
+        }
+      }
+    }
+  ]
+}
